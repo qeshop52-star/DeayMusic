@@ -2,12 +2,10 @@ const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerSta
 const playdl = require('play-dl');
 const { EmbedBuilder } = require('discord.js');
 
-// แก้ปัญหา 'client_id' ของ SoundCloud
 playdl.getFreeClientID().then((clientID) => {
     playdl.setToken({ soundcloud: { client_id: clientID } });
 }).catch(err => console.error("Could not set SoundCloud token:", err));
 
-// เก็บข้อมูลคิว
 const serverQueues = new Map();
 
 async function playNext(guildId) {
@@ -30,7 +28,6 @@ async function playNext(guildId) {
 
         queue.player.play(resource);
 
-        // --- สร้างกรอบข้อความเวลาเล่นเพลง (Embed) ---
         const embed = new EmbedBuilder()
             .setColor('#ff99cc') 
             .setAuthor({ name: 'Deay Music Room', iconURL: queue.textChannel.client.user.displayAvatarURL() })
@@ -44,8 +41,12 @@ async function playNext(guildId) {
                 { name: '🔊 Room:', value: `└ ${queue.voiceChannel.name}`, inline: true },
                 { name: '👑 Support:', value: `└ [แจ้งปัญหาคลิก!](https://discord.com)`, inline: true }
             )
-            .setImage(track.thumbnail || 'https://i.imgur.com/TqE2iLg.png') 
             .setFooter({ text: `Node: Deay Server | ${track.url}` });
+            
+        // เช็คว่าถ้ามีรูปปกเพลงจริงๆ ค่อยใส่รูป จะได้ไม่ขึ้นรูปลิงก์พัง
+        if (track.thumbnail) {
+            embed.setImage(track.thumbnail);
+        }
 
         queue.textChannel.send({ embeds: [embed] });
 
@@ -78,7 +79,6 @@ async function handleCommands(message) {
         return message.reply("✅ กำลังทดสอบระบบเสียงพื้นฐาน (Native Test)...");
     }
 
-    // --- คำสั่ง !play ---
     if (commandName === 'play') {
         const query = args.join(' ');
         if (!query) return message.reply('❌ โปรดระบุชื่อเพลงหรือ Link ที่ต้องการเล่น');
@@ -119,7 +119,6 @@ async function handleCommands(message) {
 
             if (!trackInfo) return replyMessage.edit('❌ ค้นหาเพลงไม่เจอครับ ลองเปลี่ยนชื่อเพลงดูนะครับ');
 
-            // จัดการระบบคิว
             let queue = serverQueues.get(message.guild.id);
             if (!queue) {
                 const connection = joinVoiceChannel({ channelId: voiceChannel.id, guildId: message.guild.id, adapterCreator: message.guild.voiceAdapterCreator });
@@ -137,17 +136,18 @@ async function handleCommands(message) {
 
             queue.tracks.push(trackInfo);
             
-            // --- สร้างกรอบข้อความตอนเพิ่มคิว (แบบในรูป) ---
             const queueEmbed = new EmbedBuilder()
-                .setColor('#2b2d31') // สีเทาเข้มแบบโปรๆ
+                .setColor('#2b2d31')
                 .setAuthor({ name: 'Deay Music Player', iconURL: message.client.user.displayAvatarURL() })
                 .setDescription(`Added to queue\n**${trackInfo.title}**\n${trackInfo.author} | \`${trackInfo.duration}\``)
-                .setImage(trackInfo.thumbnail || 'https://i.imgur.com/TqE2iLg.png')
                 .setFooter({ text: `Node: Deay Server | ${trackInfo.url}` });
+
+            if (trackInfo.thumbnail) {
+                queueEmbed.setImage(trackInfo.thumbnail);
+            }
 
             await replyMessage.edit({ content: '', embeds: [queueEmbed] });
 
-            // ตั้งเวลาให้ลบหน้าต่าง "เพิ่มคิว" ทิ้งอัตโนมัติใน 10 วินาที จะได้ไม่รกแชท
             setTimeout(() => {
                 replyMessage.delete().catch(() => {});
             }, 10000);
@@ -160,7 +160,6 @@ async function handleCommands(message) {
         }
     }
 
-    // --- คำสั่ง !stop และคำสั่งอื่นๆ ---
     if (commandName === 'stop') {
         const queue = serverQueues.get(message.guild.id);
         if (!queue) return message.reply('❌ ตอนนี้ไม่มีเพลงเล่นอยู่ครับ');
