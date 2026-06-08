@@ -143,7 +143,13 @@ async function playLogic(interaction, query, isRandom = false) {
         return interaction.reply({ content: '❌ คุณต้องอยู่ในห้องเสียงก่อนจึงจะสั่งบอทได้ครับ!', flags: MessageFlags.Ephemeral });
     }
 
-    let cleanQuery = query;
+    // ทำความสะอาดข้อความ เผื่อพิมพ์ลิงก์ติดตัวหนังสือมา
+    let cleanQuery = query.trim();
+    const urlMatch = cleanQuery.match(/https?:\/\/[^\s]+/);
+    if (urlMatch) {
+        cleanQuery = urlMatch[0]; // ดึงมาเฉพาะตัวลิงก์จริงๆ
+    }
+
     if (cleanQuery.includes('youtube.com/watch') && cleanQuery.includes('&list=')) {
         cleanQuery = cleanQuery.split('&list=')[0];
     }
@@ -158,6 +164,7 @@ async function playLogic(interaction, query, isRandom = false) {
     try {
         let trackInfo = null;
         if (cleanQuery.startsWith("http")) {
+            // ถ้าเป็นลิงก์ ลองดึงข้อมูลดู
             const info = await playdl.video_info(cleanQuery).catch(() => null) || await playdl.soundcloud(cleanQuery).catch(() => null);
             if (info) {
                 trackInfo = {
@@ -172,6 +179,7 @@ async function playLogic(interaction, query, isRandom = false) {
                 };
             }
         } else {
+            // ถ้าไม่ใช่ลิงก์ ให้ค้นหาจาก SoundCloud แทน (ป้องกัน YouTube บล็อก)
             const searchResults = await playdl.search(cleanQuery, { source: { soundcloud: 'tracks' }, limit: 1 }).catch(() => null);
             if (searchResults && searchResults.length > 0) {
                 trackInfo = {
@@ -188,10 +196,11 @@ async function playLogic(interaction, query, isRandom = false) {
         }
 
         if (!trackInfo) {
+            const errorMsg = '❌ ค้นหาเพลงไม่เจอ หรือ YouTube อาจจะบล็อกลิงก์นี้อยู่ครับ แนะนำให้ลอง **พิมพ์เป็นชื่อเพลง** แทนนะครับ!';
             if (interaction.isButton()) {
-                return interaction.followUp({ content: '❌ ค้นหาเพลงไม่เจอครับ ลองเปลี่ยนชื่อเพลงดูนะครับ', flags: MessageFlags.Ephemeral });
+                return interaction.followUp({ content: errorMsg, flags: MessageFlags.Ephemeral });
             } else {
-                return interaction.editReply({ content: '❌ ค้นหาเพลงไม่เจอครับ ลองเปลี่ยนชื่อเพลงดูนะครับ' });
+                return interaction.editReply({ content: errorMsg });
             }
         }
 
@@ -235,16 +244,10 @@ async function playLogic(interaction, query, isRandom = false) {
     }
 }
 
-// ----------------------------------------
-// ระบบใหม่: จัดการข้อความที่พิมพ์เข้ามาตรงๆ (Auto-Play)
-// ----------------------------------------
 async function handleMessages(message) {
-    // ลบข้อความที่ผู้ใช้พิมพ์ เพื่อรักษาความสะอาดของห้อง
     message.delete().catch(() => {});
 
-    // ฟังก์ชันสร้างข้อความแจ้งเตือนชั่วคราวแล้วลบทิ้งใน 5 วินาที
     const sendTempMsg = async (opts) => {
-        // ต้องตัด flags (Ephemeral) ทิ้ง เพราะการตอบข้อความธรรมดาใช้ Ephemeral ไม่ได้
         const cleanOpts = typeof opts === 'string' ? { content: opts } : { ...opts };
         delete cleanOpts.flags;
         
@@ -257,7 +260,6 @@ async function handleMessages(message) {
         }
     };
 
-    // จำลอง Interaction ขึ้นมาหลอกฟังก์ชันเก่า ให้เล่นเพลงได้ปกติ
     const fakeInteraction = {
         guild: message.guild,
         member: message.member,
@@ -270,7 +272,6 @@ async function handleMessages(message) {
         followUp: sendTempMsg
     };
 
-    // ส่งลิงก์หรือชื่อเพลงไปเล่นเลย!
     return playLogic(fakeInteraction, message.content, false);
 }
 
@@ -368,5 +369,4 @@ async function handleCommands(interaction) {
     }
 }
 
-// ต้องส่งออก handleMessages ด้วย เพื่อให้ index.js เรียกใช้งานได้
 module.exports = { handleCommands, handleMessages };
