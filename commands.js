@@ -26,12 +26,22 @@ async function playNext(guildId) {
         
         queue.player.play(resource);
 
-        // ลบระบบส่งข้อความตอนเพลงเล่นออกไปแล้วตามสั่งครับ!
-        // บอทจะเปิดเพลงเฉยๆ โดยไม่ส่งข้อความอะไรมารกห้องแชทแล้วครับ
-
     } catch (error) {
         console.error(`[Error] เล่นเพลงไม่ได้: ${error.message}`);
-        queue.textChannel.send(`❌ ข้ามเพลง **${track.title}** (ดึงไฟล์เสียงไม่สำเร็จ)`);
+        
+        // ทำให้ข้อความแจ้งเตือน Error เป็นแบบ "เห็นเฉพาะเรา" (มีปุ่ม Dismiss message)
+        try {
+            await track.interaction.followUp({ 
+                content: `❌ ข้ามเพลง **${track.title}** (ดึงไฟล์เสียงไม่สำเร็จ)`, 
+                ephemeral: true 
+            });
+        } catch (e) {
+            // สำรองเผื่อกรณีคิวเพลงยาวมากจนคำสั่งเดิมหมดอายุ จะส่งธรรมดาแล้วลบทิ้งอัตโนมัติ
+            queue.textChannel.send(`❌ ข้ามเพลง **${track.title}** (ดึงไฟล์เสียงไม่สำเร็จ)`).then(msg => {
+                setTimeout(() => msg.delete().catch(()=>{}), 10000);
+            });
+        }
+
         queue.tracks.shift();
         playNext(guildId);
     }
@@ -73,7 +83,8 @@ async function handleCommands(interaction) {
                         thumbnail: info.video_details?.thumbnails?.[0]?.url || info.thumbnail,
                         author: info.video_details?.channel?.name || info.user?.name || "Unknown",
                         duration: info.video_details?.durationRaw || (info.durationInSec ? `${Math.floor(info.durationInSec / 60)}:${(info.durationInSec % 60).toString().padStart(2, '0')}` : "Unknown"),
-                        requester: interaction.user
+                        requester: interaction.user,
+                        interaction: interaction // <-- จำว่าใครเป็นคนสั่ง เพื่อให้ตอน Error ส่งกลับไปถูกคน
                     };
                 }
             } else {
@@ -85,7 +96,8 @@ async function handleCommands(interaction) {
                         thumbnail: searchResults[0].thumbnail,
                         author: searchResults[0].user?.name || "SoundCloud",
                         duration: searchResults[0].durationInSec ? `${Math.floor(searchResults[0].durationInSec / 60)}:${(searchResults[0].durationInSec % 60).toString().padStart(2, '0')}` : "Unknown",
-                        requester: interaction.user
+                        requester: interaction.user,
+                        interaction: interaction // <-- จำว่าใครเป็นคนสั่ง
                     };
                 }
             }
