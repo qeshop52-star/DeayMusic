@@ -15,7 +15,7 @@ function getDefaultPanel(client) {
         .setAuthor({ name: `${client.user.username}'s - Music System`, iconURL: client.user.displayAvatarURL() })
         .setTitle('ไม่มีเพลงที่กำลังเล่นอยู่ในขณะนี้')
         .setDescription('ไม่มีเพลงฟังหรอ? ลองสุ่มเพลงดูสิ\n\n**Paste the song link or song name**')
-        .setImage('https://i.imgur.com/vHqBEM3.png') 
+        .setImage('https://static0.cbrimages.com/wordpress/wp-content/uploads/2020/10/cleaning.jpg') 
         .setFooter({ text: 'Discord Support : discord.gg/xxxxx | Developer : Deay' });
 
     const row = new ActionRowBuilder()
@@ -50,7 +50,7 @@ function getNowPlayingPanel(track, client, voiceChannel, queue) {
             { name: '🔊 ช่องเสียง', value: `🔊 ${voiceChannel.name}`, inline: true },
             { name: '✨ เชิญบอท', value: `[Invite](https://discord.com/api/oauth2/authorize?client_id=${client.user.id}&permissions=8&scope=bot%20applications.commands)`, inline: true }
         )
-        .setImage('https://i.imgur.com/vHqBEM3.png')  
+        .setImage('https://static0.cbrimages.com/wordpress/wp-content/uploads/2020/10/cleaning.jpg')  
         .setFooter({ text: 'ถ้าชอบเพลงนี้พิมพ์ /play เพื่อเล่นเพลงต่อได้เลย' });
 
     // แทรกส่วน "เพลงในคิว" ตรง Description
