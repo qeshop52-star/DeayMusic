@@ -16,16 +16,16 @@ async function playNext(guildId) {
     if (!queue) return;
 
     if (queue.tracks.length === 0) {
-        // ไม่มีเพลงเหลือแล้ว
         queue.playing = false;
         return;
     }
 
+    const track = queue.tracks[0]; // <--- เติมตัวแปรนี้กลับมาให้แล้วครับ
     queue.playing = true;
 
     try {
-        // ใช้ play-dl ดึงสตรีมเสียง
-        const stream = await playdl.stream(track.url, { quality: 2 });
+        // ดึงสตรีมเสียง (ลบ quality: 2 ออกแล้ว เพื่อป้องกันบัค SoundCloud)
+        const stream = await playdl.stream(track.url);
         const resource = createAudioResource(stream.stream, {
             inputType: stream.type
         });
@@ -34,9 +34,9 @@ async function playNext(guildId) {
         queue.textChannel.send(`▶️ กำลังเล่น: **${track.title}**`);
     } catch (error) {
         console.error(`[Error] เล่นเพลงไม่ได้: ${error.message}`);
-        queue.textChannel.send(`❌ ข้ามเพลง **${track.title}** เนื่องจากเกิดข้อผิดพลาดในการดึงข้อมูลเสียง`);
-        queue.tracks.shift(); // ลบเพลงที่มีปัญหาออก
-        playNext(guildId); // เล่นเพลงถัดไป
+        queue.textChannel.send(`❌ ข้ามเพลง **${track.title}** (ดึงไฟล์เสียงไม่สำเร็จ)`);
+        queue.tracks.shift();
+        playNext(guildId);
     }
 }
 
