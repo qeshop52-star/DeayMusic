@@ -38,6 +38,13 @@ client.on('messageCreate', async (message) => {
     await handleCommands(message);
 });
 
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isButton()) return;
+    if (interaction.customId === 'delete_msg') {
+        await interaction.message.delete().catch(() => {}); // พอกดปุ่มปิด ให้ลบข้อความนี้ทิ้ง
+    }
+});
+
 // เริ่มเชื่อมต่อบอทด้วย Token
 client.login(process.env.DISCORD_TOKEN).catch(err => {
     console.error("❌ ไม่สามารถล็อกอินได้ โปรดตรวจสอบว่าใส่ Token ในไฟล์ .env ถูกต้องหรือไม่", err);
