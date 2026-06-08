@@ -1,4 +1,5 @@
-require('dotenv').config();
+const http = require('http');
+http.createServer((req, res) => res.end('Bot is alive!')).listen(process.env.PORT || 3000);require('dotenv').config();
 const dns = require('node:dns');
 dns.setDefaultResultOrder('ipv4first'); // Fix for Node 20+ IPv6 UDP bug with Discord voice
 const ffmpeg = require('@ffmpeg-installer/ffmpeg');
