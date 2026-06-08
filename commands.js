@@ -1,10 +1,9 @@
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('@discordjs/voice');
 const playdl = require('play-dl');
-const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('@discordjs/voice');
-const playdl = require('play-dl');
-const { EmbedBuilder } = require('discord.js'); // <--- วางบรรทัดที่ 3 ตรงนี้เลยครับ
+const { EmbedBuilder } = require('discord.js');
 
-// แก้ปัญหา 'client_id' undefined ของ SoundCloud// แก้ปัญหา 'client_id' undefined ของ SoundCloud
+
+// แก้ปัญหา 'client_id' undefined ของ SoundCloud
 playdl.getFreeClientID().then((clientID) => {
     playdl.setToken({ soundcloud: { client_id: clientID } });
 }).catch(err => console.error("Could not set SoundCloud token:", err));
@@ -22,12 +21,11 @@ async function playNext(guildId) {
         return;
     }
 
-    const stream = await playdl.stream(track.url, { quality: 2 });
     queue.playing = true;
 
     try {
         // ใช้ play-dl ดึงสตรีมเสียง
-        const stream = await playdl.stream(track.url);
+        const stream = await playdl.stream(track.url, { quality: 2 });
         const resource = createAudioResource(stream.stream, {
             inputType: stream.type
         });
