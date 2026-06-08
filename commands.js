@@ -2,13 +2,12 @@ const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerSta
 const playdl = require('play-dl');
 const { EmbedBuilder } = require('discord.js');
 
-
-// แก้ปัญหา 'client_id' undefined ของ SoundCloud
+// แก้ปัญหา 'client_id' ของ SoundCloud
 playdl.getFreeClientID().then((clientID) => {
     playdl.setToken({ soundcloud: { client_id: clientID } });
 }).catch(err => console.error("Could not set SoundCloud token:", err));
 
-// เก็บข้อมูลคิวของแต่ละเซิร์ฟเวอร์
+// เก็บข้อมูลคิว
 const serverQueues = new Map();
 
 async function playNext(guildId) {
@@ -20,18 +19,37 @@ async function playNext(guildId) {
         return;
     }
 
-    const track = queue.tracks[0]; // <--- เติมตัวแปรนี้กลับมาให้แล้วครับ
+    const track = queue.tracks[0];
     queue.playing = true;
 
     try {
-        // ดึงสตรีมเสียง (ลบ quality: 2 ออกแล้ว เพื่อป้องกันบัค SoundCloud)
         const stream = await playdl.stream(track.url);
         const resource = createAudioResource(stream.stream, {
             inputType: stream.type
         });
 
         queue.player.play(resource);
-        queue.textChannel.send(`▶️ กำลังเล่น: **${track.title}**`);
+
+        // --- สร้างกรอบข้อความอลังการ (Embed) แบบบอทพรีเมียม ---
+        const embed = new EmbedBuilder()
+            .setColor('#ff99cc') // สีแถบด้านซ้าย (สีชมพู)
+            .setAuthor({ name: 'Deay Music Room', iconURL: queue.textChannel.client.user.displayAvatarURL() })
+            .setTitle(track.title)
+            .setURL(track.url)
+            .addFields(
+                { name: '👤 Author:', value: `└ ${track.author}`, inline: true },
+                { name: '🕒 Duration:', value: `└ ${track.duration}`, inline: true },
+                { name: '🎶 Queues:', value: `└ ${queue.tracks.length - 1}`, inline: true },
+                { name: '👤 Requester:', value: `└ <@${track.requester.id}>`, inline: true },
+                { name: '🔊 Room:', value: `└ ${queue.voiceChannel.name}`, inline: true },
+                { name: '👑 Support:', value: `└ [แจ้งปัญหาคลิก!](https://discord.com)`, inline: true }
+            )
+            .setImage(track.thumbnail || 'https://i.imgur.com/TqE2iLg.png') // ใส่ปกเพลง (ถ้าไม่มีจะใช้รูป default)
+            .setFooter({ text: `Node: Deay Server | ${track.url}` });
+
+        // ส่งข้อความเข้าแชท
+        queue.textChannel.send({ embeds: [embed] });
+
     } catch (error) {
         console.error(`[Error] เล่นเพลงไม่ได้: ${error.message}`);
         queue.textChannel.send(`❌ ข้ามเพลง **${track.title}** (ดึงไฟล์เสียงไม่สำเร็จ)`);
@@ -46,18 +64,14 @@ async function handleCommands(message) {
 
     const voiceChannel = message.member?.voice?.channel;
     if (!voiceChannel) {
-        if (['play', 'stop', 'skip', 'testplay'].includes(commandName)) {
+        if (['play', 'stop', 'skip', 'testplay', 'queue'].includes(commandName)) {
             return message.reply('❌ คุณต้องอยู่ในห้องเสียงก่อนจึงจะสั่งบอทได้ครับ!');
         }
         return;
     }
 
     if (commandName === 'testplay') {
-        const connection = joinVoiceChannel({
-            channelId: voiceChannel.id,
-            guildId: message.guild.id,
-            adapterCreator: message.guild.voiceAdapterCreator,
-        });
+        const connection = joinVoiceChannel({ channelId: voiceChannel.id, guildId: message.guild.id, adapterCreator: message.guild.voiceAdapterCreator });
         const nativePlayer = createAudioPlayer();
         const resource = createAudioResource('https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3');
         nativePlayer.play(resource);
@@ -68,95 +82,65 @@ async function handleCommands(message) {
     // --- คำสั่ง !play ---
     if (commandName === 'play') {
         const query = args.join(' ');
-        if (!query) return message.reply('❌ โปรดระบุชื่อเพลงหรือ Link ที่ต้องการเล่น (ตัวอย่าง: `!play เพลงรัก`)');
+        if (!query) return message.reply('❌ โปรดระบุชื่อเพลงหรือ Link ที่ต้องการเล่น');
 
         let cleanQuery = query;
-        if (cleanQuery.includes('youtube.com/watch') && cleanQuery.includes('&list=')) {
-            cleanQuery = cleanQuery.split('&list=')[0];
-        }
+        if (cleanQuery.includes('youtube.com/watch') && cleanQuery.includes('&list=')) cleanQuery = cleanQuery.split('&list=')[0];
 
         const replyMessage = await message.reply('⏳ กำลังค้นหาเพลง...');
 
         try {
             let trackInfo = null;
 
+            // ดึงข้อมูลเพลงแบบละเอียด (เพื่อเอาไปโชว์ในกรอบ)
             if (cleanQuery.startsWith("http")) {
-                // ถ้าเป็นลิงก์ (YouTube หรือ SoundCloud)
                 const info = await playdl.video_info(cleanQuery).catch(() => null) || await playdl.soundcloud(cleanQuery).catch(() => null);
                 if (info) {
                     trackInfo = {
-                        title: info.video_details?.title || info.name,
-                        url: info.video_details?.url || info.url
+                        title: info.video_details?.title || info.name || "Unknown Title",
+                        url: info.video_details?.url || info.url,
+                        thumbnail: info.video_details?.thumbnails?.[0]?.url || info.thumbnail,
+                        author: info.video_details?.channel?.name || info.user?.name || "Unknown",
+                        duration: info.video_details?.durationRaw || (info.durationInSec ? `${Math.floor(info.durationInSec / 60)}:${(info.durationInSec % 60).toString().padStart(2, '0')}` : "Unknown"),
+                        requester: message.author
                     };
                 }
             } else {
-                // บังคับค้นหาใน SoundCloud เพื่อป้องกัน Invalid URL จาก YouTube
                 const searchResults = await playdl.search(cleanQuery, { source: { soundcloud: 'tracks' }, limit: 1 }).catch(() => null);
-
                 if (searchResults && searchResults.length > 0) {
                     trackInfo = {
-                        title: searchResults[0].name,
-                        url: searchResults[0].url
+                        title: searchResults[0].name || "Unknown Title",
+                        url: searchResults[0].url,
+                        thumbnail: searchResults[0].thumbnail,
+                        author: searchResults[0].user?.name || "SoundCloud",
+                        duration: searchResults[0].durationInSec ? `${Math.floor(searchResults[0].durationInSec / 60)}:${(searchResults[0].durationInSec % 60).toString().padStart(2, '0')}` : "Unknown",
+                        requester: message.author
                     };
                 }
             }
 
-            if (!trackInfo) {
-                return replyMessage.edit('❌ ค้นหาเพลงไม่เจอครับ ลองเปลี่ยนชื่อเพลงดูนะครับ');
-            }
+            if (!trackInfo) return replyMessage.edit('❌ ค้นหาเพลงไม่เจอครับ ลองเปลี่ยนชื่อเพลงดูนะครับ');
 
             // จัดการระบบคิว
             let queue = serverQueues.get(message.guild.id);
             if (!queue) {
-                const connection = joinVoiceChannel({
-                    channelId: voiceChannel.id,
-                    guildId: message.guild.id,
-                    adapterCreator: message.guild.voiceAdapterCreator,
-                });
-
-                // ป้องกันบอทแครชเวลาเน็ตตัด
+                const connection = joinVoiceChannel({ channelId: voiceChannel.id, guildId: message.guild.id, adapterCreator: message.guild.voiceAdapterCreator });
                 connection.on('error', error => console.error(`[Connection Error] ${error.message}`));
-                connection.on('stateChange', (oldState, newState) => {
-                    if (newState.status === 'disconnected') {
-                        // ปล่อยให้มันลองเชื่อมต่อใหม่ หรือลบคิวถ้าจำเป็น
-                    }
-                });
-
+                
                 const player = createAudioPlayer();
                 connection.subscribe(player);
 
-                queue = {
-                    textChannel: message.channel,
-                    voiceChannel: voiceChannel,
-                    connection: connection,
-                    player: player,
-                    tracks: [],
-                    playing: false
-                };
-
+                queue = { textChannel: message.channel, voiceChannel: voiceChannel, connection: connection, player: player, tracks: [], playing: false };
                 serverQueues.set(message.guild.id, queue);
 
-                // ตั้งค่าเมื่อเพลงเล่นจบ
-                player.on(AudioPlayerStatus.Idle, () => {
-                    queue.tracks.shift(); // นำเพลงที่เพิ่งเล่นจบออกจากคิว
-                    playNext(message.guild.id); // เล่นเพลงถัดไป
-                });
-
-                player.on('error', error => {
-                    console.error(`[Player Error] ${error.message}`);
-                    queue.tracks.shift();
-                    playNext(message.guild.id);
-                });
+                player.on(AudioPlayerStatus.Idle, () => { queue.tracks.shift(); playNext(message.guild.id); });
+                player.on('error', error => { console.error(`[Player Error] ${error.message}`); queue.tracks.shift(); playNext(message.guild.id); });
             }
 
-            // นำเพลงเข้าคิว
             queue.tracks.push(trackInfo);
             replyMessage.edit(`🎵 เพิ่มเพลง **${trackInfo.title}** ลงในคิวแล้ว!`);
 
-            // ถ้าไม่มีเพลงกำลังเล่นอยู่ ให้เริ่มเล่น
-            if (!queue.playing) {
-                playNext(message.guild.id);
-            }
+            if (!queue.playing) playNext(message.guild.id);
 
         } catch (e) {
             console.error(e);
@@ -164,55 +148,27 @@ async function handleCommands(message) {
         }
     }
 
-    // --- คำสั่ง !stop ---
+    // --- คำสั่ง !stop และคำสั่งอื่นๆ ---
     if (commandName === 'stop') {
         const queue = serverQueues.get(message.guild.id);
         if (!queue) return message.reply('❌ ตอนนี้ไม่มีเพลงเล่นอยู่ครับ');
-
-        queue.tracks = []; // ล้างคิว
-        queue.player.stop(); // หยุดเล่น
-        queue.connection.destroy(); // ออกจากห้อง
-        serverQueues.delete(message.guild.id);
-
+        queue.tracks = []; queue.player.stop(); queue.connection.destroy(); serverQueues.delete(message.guild.id);
         return message.reply('🛑 หยุดเพลง ล้างคิว และออกจากห้องเรียบร้อยแล้วครับ');
     }
 
-    // --- คำสั่ง !skip ---
     if (commandName === 'skip') {
         const queue = serverQueues.get(message.guild.id);
         if (!queue || !queue.playing) return message.reply('❌ ตอนนี้ไม่มีเพลงเล่นอยู่ครับ');
-
-        queue.player.stop(); // การกด stop ตัว player จะกระตุ้น Event "Idle" ซึ่งจะข้ามไปเพลงถัดไปอัตโนมัติ
+        queue.player.stop(); 
         return message.reply('⏭️ ข้ามเพลงปัจจุบันแล้วครับ');
     }
 
-    // --- คำสั่ง !queue ---
     if (commandName === 'queue') {
         const queue = serverQueues.get(message.guild.id);
         if (!queue || queue.tracks.length === 0) return message.reply('❌ ตอนนี้ไม่มีเพลงในคิวครับ');
-
         const tracks = queue.tracks;
-        const queueString = tracks.slice(0, 10).map((track, i) => {
-            if (i === 0) return `▶️ **กำลังเล่น:** ${track.title}`;
-            return `${i}. **${track.title}**`;
-        }).join('\n');
-        
+        const queueString = tracks.slice(0, 10).map((t, i) => i === 0 ? `▶️ **กำลังเล่น:** ${t.title}` : `${i}. **${t.title}**`).join('\n');
         return message.reply(`📋 **คิวเพลงปัจจุบัน:**\n${queueString}${tracks.length > 10 ? `\n...และอีก ${tracks.length - 10} เพลง` : ''}`);
-    }
-
-    // --- คำสั่ง !menu โชว์รูปภาพ ---
-    if (commandName === 'menu' || commandName === 'help') {
-        const embed = new EmbedBuilder()
-            .setColor('#ffb6c1') // สีชมพู (เปลี่ยนสีได้ตามใจชอบ)
-            .setAuthor({ 
-                name: 'Deay Music Room', 
-                iconURL: message.client.user.displayAvatarURL() // ดึงรูปโปรไฟล์บอทมาใส่ให้อัตโนมัติ
-            })
-            .setDescription('Type name song or url to play music ˚ ⊹')
-            .setImage('https://static0.cbrimages.com/wordpress/wp-content/uploads/2020/10/cleaning.jpg?q=50&fit=crop&w=825&dpr=1.5') // <--- เอาลิงก์รูปภาพมาใส่ตรงนี้
-            .setFooter({ text: 'deaybot.work' });
-
-        return message.channel.send({ embeds: [embed] });
     }
 }
 
