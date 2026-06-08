@@ -1,6 +1,7 @@
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('discord-voip');
 const playdl = require('play-dl');
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags, StringSelectMenuBuilder } = require('discord.js');
+const https = require('https'); // นำเข้าระบบโหลดข้อมูลผ่านเว็บ
 
 playdl.getFreeClientID().then((clientID) => {
     playdl.setToken({ soundcloud: { client_id: clientID } });
@@ -9,7 +10,25 @@ playdl.getFreeClientID().then((clientID) => {
 const serverQueues = new Map();
 const serverPanels = new Map(); 
 
-// ฟังก์ชันสร้างชุดแผงควบคุม 4 แถวแบบมืออาชีพ!
+// ----------------------------------------
+// วิชาลับ: ฟังก์ชันแอบดึงข้อมูล YouTube แบบไม่ให้โดนบล็อก (oEmbed API)
+// ----------------------------------------
+function fetchYouTubeOEmbed(url) {
+    return new Promise((resolve) => {
+        https.get(`https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`, (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+                if (res.statusCode === 200) {
+                    try { resolve(JSON.parse(data)); } catch (e) { resolve(null); }
+                } else {
+                    resolve(null);
+                }
+            });
+        }).on('error', () => resolve(null));
+    });
+}
+
 function getControllerComponents() {
     const row1 = new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
@@ -71,7 +90,6 @@ function getNowPlayingPanel(track, client, voiceChannel, queue) {
             { name: '🔊 ช่องเสียง', value: `🔊 ${voiceChannel.name}`, inline: true },
             { name: '✨ เชิญบอท', value: `[Invite](https://discord.com/api/oauth2/authorize?client_id=${client.user.id}&permissions=8&scope=bot%20applications.commands)`, inline: true }
         )
-        // จุดเด่น: เปลี่ยนหน้าปกตามเพลงที่เล่น!
         .setImage(track.thumbnail || 'https://i.imgur.com/vHqBEM3.png')  
         .setFooter({ text: 'Node: Deay Server [Proxy] • loop: ปิด • volume: 100 • autoplay: ปิด' });
 
@@ -172,18 +190,45 @@ async function playLogic(interaction, query, isRandom = false) {
     try {
         let trackInfo = null;
         if (cleanQuery.startsWith("http")) {
-            const info = await playdl.video_info(cleanQuery).catch(() => null) || await playdl.soundcloud(cleanQuery).catch(() => null);
-            if (info) {
-                trackInfo = {
-                    title: info.video_details?.title || info.name || "Unknown Title",
-                    url: info.video_details?.url || info.url,
-                    thumbnail: info.video_details?.thumbnails?.[0]?.url || info.thumbnail,
-                    author: info.video_details?.channel?.name || info.user?.name || "Unknown",
-                    duration: info.video_details?.durationRaw || (info.durationInSec ? `${Math.floor(info.durationInSec / 60)}:${(info.durationInSec % 60).toString().padStart(2, '0')}` : "Unknown"),
-                    requester: interaction.user,
-                    interaction: interaction,
-                    isRandom: isRandom 
-                };
+            
+            // ----------------------------------------
+            // ระบบทะลวงบล็อก YouTube!
+            // ----------------------------------------
+            if (cleanQuery.includes('youtube.com') || cleanQuery.includes('youtu.be')) {
+                const ytData = await fetchYouTubeOEmbed(cleanQuery);
+                if (ytData) {
+                    // เอาชื่อเพลงจาก YouTube ไปค้นหาใน SoundCloud เพื่อดึงเสียงแบบลื่นๆ
+                    const searchResults = await playdl.search(ytData.title, { source: { soundcloud: 'tracks' }, limit: 1 }).catch(() => null);
+                    if (searchResults && searchResults.length > 0) {
+                        trackInfo = {
+                            title: ytData.title, // ชื่อเพลงจาก YouTube 
+                            url: searchResults[0].url, // ลิงก์เสียงจาก SoundCloud
+                            thumbnail: ytData.thumbnail_url, // หน้าปกจาก YouTube
+                            author: ytData.author_name, // ชื่อช่อง YouTube
+                            duration: searchResults[0].durationInSec ? `${Math.floor(searchResults[0].durationInSec / 60)}:${(searchResults[0].durationInSec % 60).toString().padStart(2, '0')}` : "Unknown",
+                            requester: interaction.user,
+                            interaction: interaction,
+                            isRandom: isRandom
+                        };
+                    }
+                }
+            }
+
+            // ถ้าไม่ใช่ YouTube หรือระบบดึงรูปด้านบนล้มเหลว ให้กลับไปใช้วิธีปกติ
+            if (!trackInfo) {
+                const info = await playdl.soundcloud(cleanQuery).catch(() => null) || await playdl.video_info(cleanQuery).catch(() => null);
+                if (info) {
+                    trackInfo = {
+                        title: info.video_details?.title || info.name || "Unknown Title",
+                        url: info.video_details?.url || info.url,
+                        thumbnail: info.video_details?.thumbnails?.[0]?.url || info.thumbnail,
+                        author: info.video_details?.channel?.name || info.user?.name || "Unknown",
+                        duration: info.video_details?.durationRaw || (info.durationInSec ? `${Math.floor(info.durationInSec / 60)}:${(info.durationInSec % 60).toString().padStart(2, '0')}` : "Unknown"),
+                        requester: interaction.user,
+                        interaction: interaction,
+                        isRandom: isRandom 
+                    };
+                }
             }
         } else {
             const searchResults = await playdl.search(cleanQuery, { source: { soundcloud: 'tracks' }, limit: 1 }).catch(() => null);
@@ -202,7 +247,7 @@ async function playLogic(interaction, query, isRandom = false) {
         }
 
         if (!trackInfo) {
-            const errorMsg = '❌ ค้นหาเพลงไม่เจอ หรือ YouTube อาจจะบล็อกลิงก์นี้อยู่ครับ แนะนำให้ลอง **พิมพ์เป็นชื่อเพลง** แทนนะครับ!';
+            const errorMsg = '❌ ค้นหาเพลงไม่เจอ หรือ YouTube อาจจะบล็อกคลิปนี้แบบ 100% ไปแล้วครับ แนะนำให้ลอง **พิมพ์เป็นชื่อเพลง** แทนลิงก์นะครับ!';
             if (interaction.isButton() || interaction.isStringSelectMenu()) {
                 return interaction.followUp({ content: errorMsg, flags: MessageFlags.Ephemeral });
             } else {
@@ -283,14 +328,10 @@ async function handleMessages(message) {
 }
 
 async function handleCommands(interaction) {
-    // ----------------------------------------
-    // จัดการปุ่มกด (Buttons) และเมนู (Select Menus) บนแผงควบคุม
-    // ----------------------------------------
     if (interaction.isButton() || interaction.isStringSelectMenu()) {
         const customId = interaction.customId;
         const queue = serverQueues.get(interaction.guild.id);
 
-        // จัดการเมนูเลือกเพลงสุ่ม
         if (customId === 'saved_songs' && interaction.values[0] === 'random_song') {
             const randomSongs = ["lofi hip hop radio - beats to relax/study to", "จี่หอย", "Shape of You", "ตามตะวัน", "ทรงอย่างแบด", "Every Summertime", "Sabrina Carpenter"];
             const randomQuery = randomSongs[Math.floor(Math.random() * randomSongs.length)];
@@ -298,7 +339,6 @@ async function handleCommands(interaction) {
             return playLogic(interaction, randomQuery, true); 
         }
 
-        // จัดการปุ่ม Pause/Play
         if (customId === 'btn_pause') {
             if (!queue) return interaction.reply({ content: '❌ ไม่มีเพลงเล่นอยู่ครับ', flags: MessageFlags.Ephemeral });
             if (queue.player.state.status === AudioPlayerStatus.Playing) {
@@ -310,14 +350,12 @@ async function handleCommands(interaction) {
             }
         }
         
-        // จัดการปุ่มข้ามเพลง
         if (customId === 'btn_skip') {
              if (!queue || !queue.playing) return interaction.reply({ content: '❌ ไม่มีเพลงให้ข้ามครับ', flags: MessageFlags.Ephemeral });
              queue.player.stop(); 
              return interaction.reply({ content: '⏭️ ข้ามเพลงเรียบร้อย', flags: MessageFlags.Ephemeral });
         }
 
-        // จัดการปุ่มหยุดเพลงและล้างคิว
         if (customId === 'btn_stop') {
              if (!queue) return interaction.reply({ content: '❌ ไม่มีเพลงเล่นอยู่ครับ', flags: MessageFlags.Ephemeral });
              queue.tracks = []; queue.player.stop(); queue.connection.destroy(); serverQueues.delete(interaction.guild.id);
@@ -325,7 +363,6 @@ async function handleCommands(interaction) {
              return interaction.reply({ content: '⏹️ หยุดเพลงและล้างคิวเรียบร้อย', flags: MessageFlags.Ephemeral });
         }
 
-        // ปุ่มอื่นๆ ที่กำลังพัฒนา
         if (['btn_loop', 'btn_shuffle', 'btn_vol_up', 'btn_vol_down', 'btn_mute', 'select_effect'].includes(customId)) {
              return interaction.reply({ content: '🚧 ฟีเจอร์นี้กำลังพัฒนานะครับ อดใจรอการอัปเดตเวอร์ชั่นหน้านะ!', flags: MessageFlags.Ephemeral });
         }
@@ -352,7 +389,6 @@ async function handleCommands(interaction) {
             }
         }
 
-        // ถ้ามีข้อความเก่าๆ ในห้อง ให้ลบทิ้งก่อนส่งแผงควบคุมใหม่ เพื่อให้แผงอยู่ล่างสุดเสมอ
         try {
             const fetched = await targetChannel.messages.fetch({ limit: 50 });
             await targetChannel.bulkDelete(fetched);
