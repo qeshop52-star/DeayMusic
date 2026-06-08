@@ -15,7 +15,7 @@ function getDefaultPanel(client) {
         .setAuthor({ name: `${client.user.username}'s - Music System`, iconURL: client.user.displayAvatarURL() })
         .setTitle('ไม่มีเพลงที่กำลังเล่นอยู่ในขณะนี้')
         .setDescription('ไม่มีเพลงฟังหรอ? ลองสุ่มเพลงดูสิ\n\n**Paste the song link or song name**')
-        .setImage('https://static0.cbrimages.com/wordpress/wp-content/uploads/2020/10/cleaning.jpg') // <--- เปลี่ยนลิงก์รูปตรงนี้ได้เลยนะครับ!
+        .setImage('https://i.imgur.com/vHqBEM3.png') 
         .setFooter({ text: 'Discord Support : discord.gg/xxxxx | Developer : Deay' });
 
     const row = new ActionRowBuilder()
@@ -35,7 +35,8 @@ function getDefaultPanel(client) {
     return { embeds: [embed], components: [row] };
 }
 
-function getNowPlayingPanel(track, client, voiceChannel) {
+// อัปเดตให้รับค่า queue เข้ามาเพื่อดึงรายชื่อเพลงในคิว
+function getNowPlayingPanel(track, client, voiceChannel, queue) {
     const embed = new EmbedBuilder()
         .setColor('#2b2d31')
         .setAuthor({ name: `${client.user.username}'s - Music System`, iconURL: client.user.displayAvatarURL() })
@@ -49,8 +50,22 @@ function getNowPlayingPanel(track, client, voiceChannel) {
             { name: '🔊 ช่องเสียง', value: `🔊 ${voiceChannel.name}`, inline: true },
             { name: '✨ เชิญบอท', value: `[Invite](https://discord.com/api/oauth2/authorize?client_id=${client.user.id}&permissions=8&scope=bot%20applications.commands)`, inline: true }
         )
-        .setImage('https://static0.cbrimages.com/wordpress/wp-content/uploads/2020/10/cleaning.jpg')  // <--- เปลี่ยนลิงก์รูปตรงนี้ได้เลยนะครับ!
+        .setImage('https://i.imgur.com/vHqBEM3.png')  
         .setFooter({ text: 'ถ้าชอบเพลงนี้พิมพ์ /play เพื่อเล่นเพลงต่อได้เลย' });
+
+    // แทรกส่วน "เพลงในคิว" ตรง Description
+    if (queue && queue.tracks.length > 1) {
+        const upNext = queue.tracks.slice(1, 11); // ดึงคิวมาโชว์สูงสุด 10 เพลง
+        let description = `**เพลงในคิว [ ${queue.tracks.length - 1} ] เพลง**\n\n`;
+        description += upNext.map((t, i) => {
+            let title = t.title;
+            // ตัดชื่อเพลงถ้ายาวเกินไป จะได้จัดบรรทัดสวยๆ
+            if (title.length > 35) title = title.substring(0, 35) + '...';
+            return `${i + 1}. ${title}  \`${t.duration}\` <@${t.requester.id}>`;
+        }).join('\n');
+        
+        embed.setDescription(description);
+    }
 
     const row = new ActionRowBuilder()
         .addComponents(
@@ -79,7 +94,7 @@ async function updatePanelState(guildId) {
             await panelMsg.edit(getDefaultPanel(panelMsg.client));
         } else {
             const currentTrack = queue.tracks[0];
-            await panelMsg.edit(getNowPlayingPanel(currentTrack, panelMsg.client, queue.voiceChannel));
+            await panelMsg.edit(getNowPlayingPanel(currentTrack, panelMsg.client, queue.voiceChannel, queue));
         }
     } catch (e) {
         console.error("Failed to update panel message:", e);
@@ -207,7 +222,13 @@ async function playLogic(interaction, query, isRandom = false) {
             await interaction.editReply({ content: addMsg });
         }
 
-        if (!queue.playing) playNext(interaction.guild.id);
+        // ระบบสั่งให้อัปเดตแผงเสมอ ไม่ว่าเพลงจะเล่นอยู่หรือคิวว่าง
+        if (!queue.playing) {
+            playNext(interaction.guild.id);
+        } else {
+            // อัปเดตแผงควบคุมเพื่อโชว์เพลงที่เพิ่งต่อคิวเข้าไป
+            updatePanelState(interaction.guild.id);
+        }
 
     } catch (e) {
         console.error(e);
@@ -242,20 +263,16 @@ async function handleCommands(interaction) {
 
     const commandName = interaction.commandName;
 
-    // ระบบสร้างห้องแชทอัตโนมัติเมื่อพิมพ์ /panel
     if (commandName === 'panel') {
-        // ให้บอทตอบกลับแบบโหลดรอก่อน (กัน Error ตอบกลับช้า)
         await interaction.deferReply({ flags: MessageFlags.Ephemeral }); 
 
-        // ลองค้นหาดูว่ามีห้องชื่อ deaymusic อยู่แล้วหรือยัง
         let targetChannel = interaction.guild.channels.cache.find(c => c.name === 'deaymusic');
         
-        // ถ้ายังไม่มี ให้สร้างขึ้นมาใหม่!
         if (!targetChannel) {
             try {
                 targetChannel = await interaction.guild.channels.create({
                     name: 'deaymusic',
-                    type: 0 // ประเภท 0 คือห้องข้อความ (Text Channel)
+                    type: 0 
                 });
             } catch (err) {
                 console.error(err);
@@ -263,16 +280,12 @@ async function handleCommands(interaction) {
             }
         }
 
-        // เอาแผงควบคุม ไปวางในห้องเป้าหมาย
         const msg = await targetChannel.send(getDefaultPanel(interaction.client));
         
-        // บันทึกแผงลงระบบความจำของเซิฟเวอร์
         serverPanels.set(interaction.guild.id, msg);
         
-        // ถ้าระหว่างเรียกแผงใหม่ มีเพลงเล่นอยู่พอดี ให้มันอัปเดตโชว์เพลงทันที
         updatePanelState(interaction.guild.id);
         
-        // แจ้งเตือนคนพิมพ์ /panel
         return interaction.followUp({ content: `✅ สร้างห้องและวางแผงควบคุมเรียบร้อยแล้ว แวะไปดูได้ที่ ${targetChannel} ครับ!`, flags: MessageFlags.Ephemeral });
     }
 
