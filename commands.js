@@ -1,6 +1,6 @@
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('discord-voip');
 const playdl = require('play-dl');
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags, StringSelectMenuBuilder } = require('discord.js');
 
 playdl.getFreeClientID().then((clientID) => {
     playdl.setToken({ soundcloud: { client_id: clientID } });
@@ -8,6 +8,42 @@ playdl.getFreeClientID().then((clientID) => {
 
 const serverQueues = new Map();
 const serverPanels = new Map(); 
+
+// ฟังก์ชันสร้างชุดแผงควบคุม 4 แถวแบบมืออาชีพ!
+function getControllerComponents() {
+    const row1 = new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+            .setCustomId('select_effect')
+            .setPlaceholder('เลือกเอฟเฟคเสียงที่ต้องการ')
+            .addOptions([{ label: 'ยังไม่เปิดใช้งาน', value: 'dummy' }])
+            .setDisabled(true)
+    );
+
+    const row2 = new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+            .setCustomId('saved_songs')
+            .setPlaceholder('ไม่มีเพลงที่ท่านบันทึก')
+            .addOptions([
+                { label: 'สุ่มเพลง (Random Song)', value: 'random_song', description: 'คลิกเพื่อสุ่มเล่นเพลง' }
+            ])
+    );
+
+    const row3 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('btn_pause').setEmoji('⏸️').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('btn_skip').setEmoji('⏭️').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('btn_stop').setEmoji('⏹️').setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId('btn_loop').setEmoji('🔁').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('btn_shuffle').setEmoji('🔀').setStyle(ButtonStyle.Secondary)
+    );
+
+    const row4 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('btn_vol_up').setEmoji('🔊').setLabel('เพิ่มเสียง').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('btn_vol_down').setEmoji('🔉').setLabel('ลดเสียง').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('btn_mute').setEmoji('🔇').setLabel('ปิด/เปิดเสียง').setStyle(ButtonStyle.Secondary)
+    );
+
+    return [row1, row2, row3, row4];
+}
 
 function getDefaultPanel(client) {
     const embed = new EmbedBuilder()
@@ -18,21 +54,7 @@ function getDefaultPanel(client) {
         .setImage('https://i.imgur.com/vHqBEM3.png') 
         .setFooter({ text: 'Discord Support : discord.gg/xxxxx | Developer : Deay' });
 
-    const row = new ActionRowBuilder()
-        .addComponents(
-            new ButtonBuilder()
-                .setCustomId('random_song')
-                .setLabel('สุ่มเพลง')
-                .setEmoji('🔄')
-                .setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder()
-                .setLabel('เชิญบอท')
-                .setEmoji('⏭️')
-                .setURL(`https://discord.com/api/oauth2/authorize?client_id=${client.user.id}&permissions=8&scope=bot%20applications.commands`)
-                .setStyle(ButtonStyle.Link)
-        );
-
-    return { embeds: [embed], components: [row] };
+    return { embeds: [embed], components: getControllerComponents() };
 }
 
 function getNowPlayingPanel(track, client, voiceChannel, queue) {
@@ -45,12 +67,13 @@ function getNowPlayingPanel(track, client, voiceChannel, queue) {
             { name: '✨ เจ้าของเพลง', value: `\`${track.author}\``, inline: true },
             { name: '⏱️ ความยาว', value: `\`${track.duration}\``, inline: true },
             { name: '🎵 กำลังเล่นเพลง', value: `\`${client.guilds.cache.size} เซิฟเวอร์\``, inline: true },
-            { name: track.isRandom ? '👤 สุ่มโดย' : '👤 ขอเพลงโดย', value: `<@${track.requester.id}>`, inline: true },
+            { name: '👤 เพิ่มเพลงโดย', value: `<@${track.requester.id}>`, inline: true },
             { name: '🔊 ช่องเสียง', value: `🔊 ${voiceChannel.name}`, inline: true },
             { name: '✨ เชิญบอท', value: `[Invite](https://discord.com/api/oauth2/authorize?client_id=${client.user.id}&permissions=8&scope=bot%20applications.commands)`, inline: true }
         )
-        .setImage('https://i.imgur.com/vHqBEM3.png')  
-        .setFooter({ text: 'ถ้าชอบเพลงนี้พิมพ์ /play เพื่อเล่นเพลงต่อได้เลย' });
+        // จุดเด่น: เปลี่ยนหน้าปกตามเพลงที่เล่น!
+        .setImage(track.thumbnail || 'https://i.imgur.com/vHqBEM3.png')  
+        .setFooter({ text: 'Node: Deay Server [Proxy] • loop: ปิด • volume: 100 • autoplay: ปิด' });
 
     if (queue && queue.tracks.length > 1) {
         const upNext = queue.tracks.slice(1, 11); 
@@ -64,21 +87,7 @@ function getNowPlayingPanel(track, client, voiceChannel, queue) {
         embed.setDescription(description);
     }
 
-    const row = new ActionRowBuilder()
-        .addComponents(
-            new ButtonBuilder()
-                .setCustomId('random_song')
-                .setLabel('สุ่มเพลง')
-                .setEmoji('🔄')
-                .setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder()
-                .setLabel('เชิญบอท')
-                .setEmoji('⏭️')
-                .setURL(`https://discord.com/api/oauth2/authorize?client_id=${client.user.id}&permissions=8&scope=bot%20applications.commands`)
-                .setStyle(ButtonStyle.Link)
-        );
-
-    return { embeds: [embed], components: [row] };
+    return { embeds: [embed], components: getControllerComponents() };
 }
 
 async function updatePanelState(guildId) {
@@ -143,18 +152,17 @@ async function playLogic(interaction, query, isRandom = false) {
         return interaction.reply({ content: '❌ คุณต้องอยู่ในห้องเสียงก่อนจึงจะสั่งบอทได้ครับ!', flags: MessageFlags.Ephemeral });
     }
 
-    // ทำความสะอาดข้อความ เผื่อพิมพ์ลิงก์ติดตัวหนังสือมา
     let cleanQuery = query.trim();
     const urlMatch = cleanQuery.match(/https?:\/\/[^\s]+/);
     if (urlMatch) {
-        cleanQuery = urlMatch[0]; // ดึงมาเฉพาะตัวลิงก์จริงๆ
+        cleanQuery = urlMatch[0]; 
     }
 
     if (cleanQuery.includes('youtube.com/watch') && cleanQuery.includes('&list=')) {
         cleanQuery = cleanQuery.split('&list=')[0];
     }
 
-    if (interaction.isButton()) {
+    if (interaction.isButton() || interaction.isStringSelectMenu()) {
         await interaction.deferUpdate(); 
         await interaction.followUp({ content: isRandom ? '🎲 กำลังสุ่มเพลงให้คุณฟัง...' : '⏳ กำลังค้นหาเพลง...', flags: MessageFlags.Ephemeral });
     } else {
@@ -164,7 +172,6 @@ async function playLogic(interaction, query, isRandom = false) {
     try {
         let trackInfo = null;
         if (cleanQuery.startsWith("http")) {
-            // ถ้าเป็นลิงก์ ลองดึงข้อมูลดู
             const info = await playdl.video_info(cleanQuery).catch(() => null) || await playdl.soundcloud(cleanQuery).catch(() => null);
             if (info) {
                 trackInfo = {
@@ -179,7 +186,6 @@ async function playLogic(interaction, query, isRandom = false) {
                 };
             }
         } else {
-            // ถ้าไม่ใช่ลิงก์ ให้ค้นหาจาก SoundCloud แทน (ป้องกัน YouTube บล็อก)
             const searchResults = await playdl.search(cleanQuery, { source: { soundcloud: 'tracks' }, limit: 1 }).catch(() => null);
             if (searchResults && searchResults.length > 0) {
                 trackInfo = {
@@ -197,7 +203,7 @@ async function playLogic(interaction, query, isRandom = false) {
 
         if (!trackInfo) {
             const errorMsg = '❌ ค้นหาเพลงไม่เจอ หรือ YouTube อาจจะบล็อกลิงก์นี้อยู่ครับ แนะนำให้ลอง **พิมพ์เป็นชื่อเพลง** แทนนะครับ!';
-            if (interaction.isButton()) {
+            if (interaction.isButton() || interaction.isStringSelectMenu()) {
                 return interaction.followUp({ content: errorMsg, flags: MessageFlags.Ephemeral });
             } else {
                 return interaction.editReply({ content: errorMsg });
@@ -222,7 +228,7 @@ async function playLogic(interaction, query, isRandom = false) {
         queue.tracks.push(trackInfo);
         
         const addMsg = `✅ เพิ่มเพลง **${trackInfo.title}** ลงคิวแล้ว`;
-        if (interaction.isButton()) {
+        if (interaction.isButton() || interaction.isStringSelectMenu()) {
             await interaction.followUp({ content: addMsg, flags: MessageFlags.Ephemeral });
         } else {
             await interaction.editReply({ content: addMsg });
@@ -236,7 +242,7 @@ async function playLogic(interaction, query, isRandom = false) {
 
     } catch (e) {
         console.error(e);
-        if (interaction.isButton()) {
+        if (interaction.isButton() || interaction.isStringSelectMenu()) {
             return interaction.followUp({ content: `❌ เกิดข้อผิดพลาด: ${e.message}`, flags: MessageFlags.Ephemeral });
         } else {
             return interaction.editReply({ content: `❌ เกิดข้อผิดพลาด: ${e.message}` });
@@ -267,6 +273,7 @@ async function handleMessages(message) {
         channel: message.channel,
         client: message.client,
         isButton: () => false,
+        isStringSelectMenu: () => false,
         reply: sendTempMsg,
         editReply: sendTempMsg,
         followUp: sendTempMsg
@@ -276,23 +283,53 @@ async function handleMessages(message) {
 }
 
 async function handleCommands(interaction) {
-    if (interaction.isButton()) {
-        if (interaction.customId === 'random_song') {
-            const randomSongs = [
-                "lofi hip hop radio - beats to relax/study to",
-                "จี่หอย",
-                "Shape of You",
-                "ตามตะวัน",
-                "ทรงอย่างแบด",
-                "Every Summertime",
-                "Sabrina Carpenter"
-            ];
-            const randomQuery = randomSongs[Math.floor(Math.random() * randomSongs.length)];
-            
-            serverPanels.set(interaction.guild.id, interaction.message);
+    // ----------------------------------------
+    // จัดการปุ่มกด (Buttons) และเมนู (Select Menus) บนแผงควบคุม
+    // ----------------------------------------
+    if (interaction.isButton() || interaction.isStringSelectMenu()) {
+        const customId = interaction.customId;
+        const queue = serverQueues.get(interaction.guild.id);
 
+        // จัดการเมนูเลือกเพลงสุ่ม
+        if (customId === 'saved_songs' && interaction.values[0] === 'random_song') {
+            const randomSongs = ["lofi hip hop radio - beats to relax/study to", "จี่หอย", "Shape of You", "ตามตะวัน", "ทรงอย่างแบด", "Every Summertime", "Sabrina Carpenter"];
+            const randomQuery = randomSongs[Math.floor(Math.random() * randomSongs.length)];
+            serverPanels.set(interaction.guild.id, interaction.message);
             return playLogic(interaction, randomQuery, true); 
         }
+
+        // จัดการปุ่ม Pause/Play
+        if (customId === 'btn_pause') {
+            if (!queue) return interaction.reply({ content: '❌ ไม่มีเพลงเล่นอยู่ครับ', flags: MessageFlags.Ephemeral });
+            if (queue.player.state.status === AudioPlayerStatus.Playing) {
+                queue.player.pause();
+                return interaction.reply({ content: '⏸️ หยุดเพลงชั่วคราวแล้ว', flags: MessageFlags.Ephemeral });
+            } else if (queue.player.state.status === AudioPlayerStatus.Paused) {
+                queue.player.unpause();
+                return interaction.reply({ content: '▶️ เล่นเพลงต่อแล้ว', flags: MessageFlags.Ephemeral });
+            }
+        }
+        
+        // จัดการปุ่มข้ามเพลง
+        if (customId === 'btn_skip') {
+             if (!queue || !queue.playing) return interaction.reply({ content: '❌ ไม่มีเพลงให้ข้ามครับ', flags: MessageFlags.Ephemeral });
+             queue.player.stop(); 
+             return interaction.reply({ content: '⏭️ ข้ามเพลงเรียบร้อย', flags: MessageFlags.Ephemeral });
+        }
+
+        // จัดการปุ่มหยุดเพลงและล้างคิว
+        if (customId === 'btn_stop') {
+             if (!queue) return interaction.reply({ content: '❌ ไม่มีเพลงเล่นอยู่ครับ', flags: MessageFlags.Ephemeral });
+             queue.tracks = []; queue.player.stop(); queue.connection.destroy(); serverQueues.delete(interaction.guild.id);
+             updatePanelState(interaction.guild.id);
+             return interaction.reply({ content: '⏹️ หยุดเพลงและล้างคิวเรียบร้อย', flags: MessageFlags.Ephemeral });
+        }
+
+        // ปุ่มอื่นๆ ที่กำลังพัฒนา
+        if (['btn_loop', 'btn_shuffle', 'btn_vol_up', 'btn_vol_down', 'btn_mute', 'select_effect'].includes(customId)) {
+             return interaction.reply({ content: '🚧 ฟีเจอร์นี้กำลังพัฒนานะครับ อดใจรอการอัปเดตเวอร์ชั่นหน้านะ!', flags: MessageFlags.Ephemeral });
+        }
+
         return;
     }
 
@@ -314,6 +351,12 @@ async function handleCommands(interaction) {
                 return interaction.followUp({ content: '❌ บอทไม่สามารถสร้างห้องได้ครับ โปรดตรวจสอบให้แน่ใจว่าบอทมีสิทธิ์ Manage Channels ในเซิฟเวอร์นี้', flags: MessageFlags.Ephemeral });
             }
         }
+
+        // ถ้ามีข้อความเก่าๆ ในห้อง ให้ลบทิ้งก่อนส่งแผงควบคุมใหม่ เพื่อให้แผงอยู่ล่างสุดเสมอ
+        try {
+            const fetched = await targetChannel.messages.fetch({ limit: 50 });
+            await targetChannel.bulkDelete(fetched);
+        } catch(e) { }
 
         const msg = await targetChannel.send(getDefaultPanel(interaction.client));
         
