@@ -24,8 +24,16 @@ client.on('ready', () => {
 });
 
 client.on('messageCreate', async (message) => {
-    // ข้ามข้อความที่มาจากบอทด้วยกันเอง หรือข้อความที่ไม่ได้ขึ้นต้นด้วย !
-    if (message.author.bot || !message.content.startsWith('!')) return;
+    // ข้ามข้อความที่บอทพิมพ์เอง
+    if (message.author.bot) return;
+
+    // ถ้ามีคนส่งลิงก์ URL มาเฉยๆ ให้บอทแอบเติม !play เข้าไปอัตโนมัติ
+    if (message.content.startsWith('http')) {
+        message.content = '!play ' + message.content;
+    }
+
+    // ถ้าไม่ใช่คำสั่งที่ขึ้นต้นด้วย ! ก็ให้บอทเมินไป (ป้องกันบอทรวนเวลาคนคุยกันปกติ)
+    if (!message.content.startsWith('!')) return;
 
     await handleCommands(message);
 });
