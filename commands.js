@@ -1,7 +1,7 @@
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('discord-voip');
 const playdl = require('play-dl');
-// นำเข้า ActionRowBuilder, ButtonBuilder เพื่อสร้างปุ่มกด
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+// นำเข้า MessageFlags เพิ่มเติมเพื่อแก้ Warning
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 
 playdl.getFreeClientID().then((clientID) => {
     playdl.setToken({ soundcloud: { client_id: clientID } });
@@ -33,7 +33,7 @@ async function playNext(guildId) {
         try {
             await track.interaction.followUp({ 
                 content: `❌ ข้ามเพลง **${track.title}** (ดึงไฟล์เสียงไม่สำเร็จ)`, 
-                ephemeral: true 
+                flags: MessageFlags.Ephemeral // เปลี่ยนเป็น flags เพื่อแก้ Warning
             });
         } catch (e) {
             queue.textChannel.send(`❌ ข้ามเพลง **${track.title}** (ดึงไฟล์เสียงไม่สำเร็จ)`).then(msg => {
@@ -50,7 +50,7 @@ async function playNext(guildId) {
 async function playLogic(interaction, query, isRandom = false) {
     const voiceChannel = interaction.member?.voice?.channel;
     if (!voiceChannel) {
-        return interaction.reply({ content: '❌ คุณต้องอยู่ในห้องเสียงก่อนจึงจะสั่งบอทได้ครับ!', ephemeral: true });
+        return interaction.reply({ content: '❌ คุณต้องอยู่ในห้องเสียงก่อนจึงจะสั่งบอทได้ครับ!', flags: MessageFlags.Ephemeral });
     }
 
     let cleanQuery = query;
@@ -59,7 +59,7 @@ async function playLogic(interaction, query, isRandom = false) {
     }
 
     // ถ้ากดปุ่มสุ่มเพลง ให้ขึ้นข้อความอีกแบบ
-    await interaction.reply({ content: isRandom ? '🎲 กำลังสุ่มเพลงให้คุณฟัง...' : '⏳ กำลังค้นหาเพลง...', ephemeral: true });
+    await interaction.reply({ content: isRandom ? '🎲 กำลังสุ่มเพลงให้คุณฟัง...' : '⏳ กำลังค้นหาเพลง...', flags: MessageFlags.Ephemeral });
 
     try {
         let trackInfo = null;
@@ -110,13 +110,24 @@ async function playLogic(interaction, query, isRandom = false) {
 
         queue.tracks.push(trackInfo);
         
+        // ----------------------------------------
+        // สร้างหน้าต่างแจ้งเตือนเพลงแบบในรูปที่ขอมาเป๊ะๆ!
+        // ----------------------------------------
         const queueEmbed = new EmbedBuilder()
             .setColor('#2b2d31')
-            .setAuthor({ name: 'Deay Music Player', iconURL: interaction.client.user.displayAvatarURL() })
-            .setDescription(`Added to queue\n**${trackInfo.title}**\n${trackInfo.author} | \`${trackInfo.duration}\``)
-            .setFooter({ text: `Node: Deay Server | ${trackInfo.url}` });
-
-        if (trackInfo.thumbnail) queueEmbed.setImage(trackInfo.thumbnail);
+            .setAuthor({ name: `${interaction.client.user.username}'s - Music System`, iconURL: interaction.client.user.displayAvatarURL() })
+            .setTitle(trackInfo.title)
+            .setURL(trackInfo.url) // ให้กดที่ชื่อเพลงแล้วเด้งไปหน้า YouTube/Soundcloud ได้
+            .addFields(
+                { name: '✨ เจ้าของเพลง', value: `\`${trackInfo.author}\``, inline: true },
+                { name: '⏱️ ความยาว', value: `\`${trackInfo.duration}\``, inline: true },
+                { name: '🎵 กำลังเล่นเพลง', value: `\`${interaction.client.guilds.cache.size} เซิฟเวอร์\``, inline: true },
+                { name: isRandom ? '👤 สุ่มโดย' : '👤 ขอเพลงโดย', value: `<@${interaction.user.id}>`, inline: true },
+                { name: '🔊 ช่องเสียง', value: `🔊 ${voiceChannel.name}`, inline: true },
+                { name: '✨ เชิญบอท', value: `[Invite](https://discord.com/api/oauth2/authorize?client_id=${interaction.client.user.id}&permissions=8&scope=bot%20applications.commands)`, inline: true }
+            )
+            .setImage('https://i.imgur.com/vHqBEM3.png') // ใส่รูปแบนเนอร์สีฟ้าแบบแผงควบคุม
+            .setFooter({ text: 'ถ้าชอบเพลงนี้พิมพ์ /play เพื่อเล่นเพลงได้เลย' });
 
         await interaction.editReply({ content: '', embeds: [queueEmbed] });
 
@@ -140,7 +151,8 @@ async function handleCommands(interaction) {
                 "Shape of You",
                 "ตามตะวัน",
                 "ทรงอย่างแบด",
-                "Every Summertime"
+                "Every Summertime",
+                "Sabrina Carpenter"
             ];
             // สุ่ม 1 เพลงจากลิสต์ด้านบน
             const randomQuery = randomSongs[Math.floor(Math.random() * randomSongs.length)];
@@ -188,7 +200,7 @@ async function handleCommands(interaction) {
 
     const voiceChannel = interaction.member?.voice?.channel;
     if (!voiceChannel) {
-        return interaction.reply({ content: '❌ คุณต้องอยู่ในห้องเสียงก่อนจึงจะสั่งบอทได้ครับ!', ephemeral: true });
+        return interaction.reply({ content: '❌ คุณต้องอยู่ในห้องเสียงก่อนจึงจะสั่งบอทได้ครับ!', flags: MessageFlags.Ephemeral });
     }
 
     if (commandName === 'testplay') {
@@ -197,29 +209,29 @@ async function handleCommands(interaction) {
         const resource = createAudioResource('https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3');
         nativePlayer.play(resource);
         connection.subscribe(nativePlayer);
-        return interaction.reply({ content: "✅ กำลังทดสอบระบบเสียงพื้นฐาน (Native Test)...", ephemeral: true });
+        return interaction.reply({ content: "✅ กำลังทดสอบระบบเสียงพื้นฐาน (Native Test)...", flags: MessageFlags.Ephemeral });
     }
 
     if (commandName === 'stop') {
         const queue = serverQueues.get(interaction.guild.id);
-        if (!queue) return interaction.reply({ content: '❌ ตอนนี้ไม่มีเพลงเล่นอยู่ครับ', ephemeral: true });
+        if (!queue) return interaction.reply({ content: '❌ ตอนนี้ไม่มีเพลงเล่นอยู่ครับ', flags: MessageFlags.Ephemeral });
         queue.tracks = []; queue.player.stop(); queue.connection.destroy(); serverQueues.delete(interaction.guild.id);
-        return interaction.reply({ content: '🛑 หยุดเพลง ล้างคิว และออกจากห้องเรียบร้อยแล้วครับ', ephemeral: true });
+        return interaction.reply({ content: '🛑 หยุดเพลง ล้างคิว และออกจากห้องเรียบร้อยแล้วครับ', flags: MessageFlags.Ephemeral });
     }
 
     if (commandName === 'skip') {
         const queue = serverQueues.get(interaction.guild.id);
-        if (!queue || !queue.playing) return interaction.reply({ content: '❌ ตอนนี้ไม่มีเพลงเล่นอยู่ครับ', ephemeral: true });
+        if (!queue || !queue.playing) return interaction.reply({ content: '❌ ตอนนี้ไม่มีเพลงเล่นอยู่ครับ', flags: MessageFlags.Ephemeral });
         queue.player.stop(); 
-        return interaction.reply({ content: '⏭️ ข้ามเพลงปัจจุบันแล้วครับ', ephemeral: true });
+        return interaction.reply({ content: '⏭️ ข้ามเพลงปัจจุบันแล้วครับ', flags: MessageFlags.Ephemeral });
     }
 
     if (commandName === 'queue') {
         const queue = serverQueues.get(interaction.guild.id);
-        if (!queue || queue.tracks.length === 0) return interaction.reply({ content: '❌ ตอนนี้ไม่มีเพลงในคิวครับ', ephemeral: true });
+        if (!queue || queue.tracks.length === 0) return interaction.reply({ content: '❌ ตอนนี้ไม่มีเพลงในคิวครับ', flags: MessageFlags.Ephemeral });
         const tracks = queue.tracks;
         const queueString = tracks.slice(0, 10).map((t, i) => i === 0 ? `▶️ **กำลังเล่น:** ${t.title}` : `${i}. **${t.title}**`).join('\n');
-        return interaction.reply({ content: `📋 **คิวเพลงปัจจุบัน:**\n${queueString}${tracks.length > 10 ? `\n...และอีก ${tracks.length - 10} เพลง` : ''}`, ephemeral: true });
+        return interaction.reply({ content: `📋 **คิวเพลงปัจจุบัน:**\n${queueString}${tracks.length > 10 ? `\n...และอีก ${tracks.length - 10} เพลง` : ''}`, flags: MessageFlags.Ephemeral });
     }
 }
 
