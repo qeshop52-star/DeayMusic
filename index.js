@@ -8,7 +8,8 @@ const ffmpeg = require('@ffmpeg-installer/ffmpeg');
 process.env.FFMPEG_PATH = ffmpeg.path;
 
 const { Client, GatewayIntentBits, SlashCommandBuilder } = require('discord.js');
-const handleCommands = require('./commands');
+// นำเข้าฟังก์ชันดักแชทด้วย (handleMessages)
+const { handleCommands, handleMessages } = require('./commands');
 
 const client = new Client({
     intents: [
@@ -36,7 +37,6 @@ const commands = [
     new SlashCommandBuilder()
         .setName('queue')
         .setDescription('ดูคิวเพลงปัจจุบัน'),
-    // เพิ่มคำสั่งใหม่ /panel ตรงนี้ครับ!
     new SlashCommandBuilder()
         .setName('panel')
         .setDescription('เรียกแผงควบคุมเพลงหลัก (แบบมีปุ่มสุ่มเพลง)'),
@@ -60,9 +60,18 @@ client.on('ready', async () => {
 });
 
 client.on('interactionCreate', async (interaction) => {
-    // ให้มันรับรองทั้ง Slash Command และ ปุ่มกด!
     if (interaction.isChatInputCommand() || interaction.isButton()) {
         await handleCommands(interaction);
+    }
+});
+
+// ----------------------------------------
+// ระบบใหม่: ดักจับการพิมพ์ข้อความปกติในห้อง deaymusic
+// ----------------------------------------
+client.on('messageCreate', async (message) => {
+    if (message.author.bot) return; // ไม่สนใจข้อความจากบอท
+    if (message.channel.name === 'deaymusic') {
+        await handleMessages(message); // สั่งเล่นเพลง!
     }
 });
 
