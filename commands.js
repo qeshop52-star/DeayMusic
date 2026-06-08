@@ -35,7 +35,6 @@ function getDefaultPanel(client) {
     return { embeds: [embed], components: [row] };
 }
 
-// อัปเดตให้รับค่า queue เข้ามาเพื่อดึงรายชื่อเพลงในคิว
 function getNowPlayingPanel(track, client, voiceChannel, queue) {
     const embed = new EmbedBuilder()
         .setColor('#2b2d31')
@@ -53,13 +52,11 @@ function getNowPlayingPanel(track, client, voiceChannel, queue) {
         .setImage('https://i.imgur.com/vHqBEM3.png')  
         .setFooter({ text: 'ถ้าชอบเพลงนี้พิมพ์ /play เพื่อเล่นเพลงต่อได้เลย' });
 
-    // แทรกส่วน "เพลงในคิว" ตรง Description
     if (queue && queue.tracks.length > 1) {
-        const upNext = queue.tracks.slice(1, 11); // ดึงคิวมาโชว์สูงสุด 10 เพลง
+        const upNext = queue.tracks.slice(1, 11); 
         let description = `**เพลงในคิว [ ${queue.tracks.length - 1} ] เพลง**\n\n`;
         description += upNext.map((t, i) => {
             let title = t.title;
-            // ตัดชื่อเพลงถ้ายาวเกินไป จะได้จัดบรรทัดสวยๆ
             if (title.length > 35) title = title.substring(0, 35) + '...';
             return `${i + 1}. ${title}  \`${t.duration}\` <@${t.requester.id}>`;
         }).join('\n');
@@ -222,11 +219,9 @@ async function playLogic(interaction, query, isRandom = false) {
             await interaction.editReply({ content: addMsg });
         }
 
-        // ระบบสั่งให้อัปเดตแผงเสมอ ไม่ว่าเพลงจะเล่นอยู่หรือคิวว่าง
         if (!queue.playing) {
             playNext(interaction.guild.id);
         } else {
-            // อัปเดตแผงควบคุมเพื่อโชว์เพลงที่เพิ่งต่อคิวเข้าไป
             updatePanelState(interaction.guild.id);
         }
 
@@ -238,6 +233,45 @@ async function playLogic(interaction, query, isRandom = false) {
             return interaction.editReply({ content: `❌ เกิดข้อผิดพลาด: ${e.message}` });
         }
     }
+}
+
+// ----------------------------------------
+// ระบบใหม่: จัดการข้อความที่พิมพ์เข้ามาตรงๆ (Auto-Play)
+// ----------------------------------------
+async function handleMessages(message) {
+    // ลบข้อความที่ผู้ใช้พิมพ์ เพื่อรักษาความสะอาดของห้อง
+    message.delete().catch(() => {});
+
+    // ฟังก์ชันสร้างข้อความแจ้งเตือนชั่วคราวแล้วลบทิ้งใน 5 วินาที
+    const sendTempMsg = async (opts) => {
+        // ต้องตัด flags (Ephemeral) ทิ้ง เพราะการตอบข้อความธรรมดาใช้ Ephemeral ไม่ได้
+        const cleanOpts = typeof opts === 'string' ? { content: opts } : { ...opts };
+        delete cleanOpts.flags;
+        
+        try {
+            const msg = await message.channel.send(cleanOpts);
+            setTimeout(() => msg.delete().catch(()=>{}), 5000);
+            return msg;
+        } catch (e) {
+            console.error(e);
+        }
+    };
+
+    // จำลอง Interaction ขึ้นมาหลอกฟังก์ชันเก่า ให้เล่นเพลงได้ปกติ
+    const fakeInteraction = {
+        guild: message.guild,
+        member: message.member,
+        user: message.author,
+        channel: message.channel,
+        client: message.client,
+        isButton: () => false,
+        reply: sendTempMsg,
+        editReply: sendTempMsg,
+        followUp: sendTempMsg
+    };
+
+    // ส่งลิงก์หรือชื่อเพลงไปเล่นเลย!
+    return playLogic(fakeInteraction, message.content, false);
 }
 
 async function handleCommands(interaction) {
@@ -334,4 +368,5 @@ async function handleCommands(interaction) {
     }
 }
 
-module.exports = handleCommands;
+// ต้องส่งออก handleMessages ด้วย เพื่อให้ index.js เรียกใช้งานได้
+module.exports = { handleCommands, handleMessages };
