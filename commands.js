@@ -30,9 +30,9 @@ async function playNext(guildId) {
 
         queue.player.play(resource);
 
-        // --- สร้างกรอบข้อความอลังการ (Embed) แบบบอทพรีเมียม ---
+        // --- สร้างกรอบข้อความเวลาเล่นเพลง (Embed) ---
         const embed = new EmbedBuilder()
-            .setColor('#ff99cc') // สีแถบด้านซ้าย (สีชมพู)
+            .setColor('#ff99cc') 
             .setAuthor({ name: 'Deay Music Room', iconURL: queue.textChannel.client.user.displayAvatarURL() })
             .setTitle(track.title)
             .setURL(track.url)
@@ -44,10 +44,9 @@ async function playNext(guildId) {
                 { name: '🔊 Room:', value: `└ ${queue.voiceChannel.name}`, inline: true },
                 { name: '👑 Support:', value: `└ [แจ้งปัญหาคลิก!](https://discord.com)`, inline: true }
             )
-            .setImage(track.thumbnail || 'https://i.imgur.com/TqE2iLg.png') // ใส่ปกเพลง (ถ้าไม่มีจะใช้รูป default)
+            .setImage(track.thumbnail || 'https://i.imgur.com/TqE2iLg.png') 
             .setFooter({ text: `Node: Deay Server | ${track.url}` });
 
-        // ส่งข้อความเข้าแชท
         queue.textChannel.send({ embeds: [embed] });
 
     } catch (error) {
@@ -92,7 +91,6 @@ async function handleCommands(message) {
         try {
             let trackInfo = null;
 
-            // ดึงข้อมูลเพลงแบบละเอียด (เพื่อเอาไปโชว์ในกรอบ)
             if (cleanQuery.startsWith("http")) {
                 const info = await playdl.video_info(cleanQuery).catch(() => null) || await playdl.soundcloud(cleanQuery).catch(() => null);
                 if (info) {
@@ -138,7 +136,21 @@ async function handleCommands(message) {
             }
 
             queue.tracks.push(trackInfo);
-            replyMessage.edit(`🎵 เพิ่มเพลง **${trackInfo.title}** ลงในคิวแล้ว!`);
+            
+            // --- สร้างกรอบข้อความตอนเพิ่มคิว (แบบในรูป) ---
+            const queueEmbed = new EmbedBuilder()
+                .setColor('#2b2d31') // สีเทาเข้มแบบโปรๆ
+                .setAuthor({ name: 'Deay Music Player', iconURL: message.client.user.displayAvatarURL() })
+                .setDescription(`Added to queue\n**${trackInfo.title}**\n${trackInfo.author} | \`${trackInfo.duration}\``)
+                .setImage(trackInfo.thumbnail || 'https://i.imgur.com/TqE2iLg.png')
+                .setFooter({ text: `Node: Deay Server | ${trackInfo.url}` });
+
+            await replyMessage.edit({ content: '', embeds: [queueEmbed] });
+
+            // ตั้งเวลาให้ลบหน้าต่าง "เพิ่มคิว" ทิ้งอัตโนมัติใน 10 วินาที จะได้ไม่รกแชท
+            setTimeout(() => {
+                replyMessage.delete().catch(() => {});
+            }, 10000);
 
             if (!queue.playing) playNext(message.guild.id);
 
