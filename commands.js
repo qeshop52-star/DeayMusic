@@ -211,7 +211,7 @@ async function handleCommands(message) {
                 iconURL: message.client.user.displayAvatarURL() // ดึงรูปโปรไฟล์บอทมาใส่ให้อัตโนมัติ
             })
             .setDescription('Type name song or url to play music ˚ ⊹')
-            .setImage('ลิงก์รูปภาพแบนเนอร์ของคุณ.png') // <--- เอาลิงก์รูปภาพมาใส่ตรงนี้
+            .setImage('https://static0.cbrimages.com/wordpress/wp-content/uploads/2020/10/cleaning.jpg?q=50&fit=crop&w=825&dpr=1.5') // <--- เอาลิงก์รูปภาพมาใส่ตรงนี้
             .setFooter({ text: 'deaybot.work' });
 
         return message.channel.send({ embeds: [embed] });
