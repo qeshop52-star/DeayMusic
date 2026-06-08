@@ -19,7 +19,6 @@ const client = new Client({
     ]
 });
 
-// สร้างลิสต์คำสั่ง Slash Commands ทัั้งหมดของบอทเรา
 const commands = [
     new SlashCommandBuilder()
         .setName('play')
@@ -27,7 +26,7 @@ const commands = [
         .addStringOption(option => 
             option.setName('query')
                 .setDescription('ชื่อเพลงหรือลิงก์ YouTube/SoundCloud')
-                .setRequired(true)), // บังคับให้พิมพ์ชื่อเพลง
+                .setRequired(true)),
     new SlashCommandBuilder()
         .setName('stop')
         .setDescription('หยุดเพลง ล้างคิว และออกจากห้อง'),
@@ -37,17 +36,19 @@ const commands = [
     new SlashCommandBuilder()
         .setName('queue')
         .setDescription('ดูคิวเพลงปัจจุบัน'),
+    // เพิ่มคำสั่งใหม่ /panel ตรงนี้ครับ!
+    new SlashCommandBuilder()
+        .setName('panel')
+        .setDescription('เรียกแผงควบคุมเพลงหลัก (แบบมีปุ่มสุ่มเพลง)'),
     new SlashCommandBuilder()
         .setName('testplay')
         .setDescription('ทดสอบระบบเสียง')
 ].map(command => command.toJSON());
 
-// เมื่อบอทพร้อมทำงาน ให้ลงทะเบียนคำสั่งเข้าเซิร์ฟเวอร์
 client.on('ready', async () => {
     console.log(`✅ บอทออนไลน์สำเร็จในชื่อ ${client.user.tag}!`);
     console.log('🎵 ระบบ Slash Commands พร้อมใช้งานแล้ว');
     
-    // อัปเดตเมนูคำสั่ง / ลงไปในดิสคอร์ดของคุณ
     for (const guild of client.guilds.cache.values()) {
         try {
             await guild.commands.set(commands);
@@ -58,10 +59,11 @@ client.on('ready', async () => {
     }
 });
 
-// ดักจับเวลาคนพิมพ์ /play (เปลี่ยนจาก messageCreate เป็น interactionCreate)
 client.on('interactionCreate', async (interaction) => {
-    if (!interaction.isChatInputCommand()) return; 
-    await handleCommands(interaction);
+    // ให้มันรับรองทั้ง Slash Command และ ปุ่มกด!
+    if (interaction.isChatInputCommand() || interaction.isButton()) {
+        await handleCommands(interaction);
+    }
 });
 
 client.login(process.env.DISCORD_TOKEN).catch(err => {
