@@ -1,6 +1,7 @@
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('discord-voip');
 const playdl = require('play-dl');
-const { EmbedBuilder } = require('discord.js');
+// นำเข้า ActionRowBuilder, ButtonBuilder เพื่อสร้างปุ่มกด
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
 playdl.getFreeClientID().then((clientID) => {
     playdl.setToken({ soundcloud: { client_id: clientID } });
@@ -29,14 +30,12 @@ async function playNext(guildId) {
     } catch (error) {
         console.error(`[Error] เล่นเพลงไม่ได้: ${error.message}`);
         
-        // ทำให้ข้อความแจ้งเตือน Error เป็นแบบ "เห็นเฉพาะเรา" (มีปุ่ม Dismiss message)
         try {
             await track.interaction.followUp({ 
                 content: `❌ ข้ามเพลง **${track.title}** (ดึงไฟล์เสียงไม่สำเร็จ)`, 
                 ephemeral: true 
             });
         } catch (e) {
-            // สำรองเผื่อกรณีคิวเพลงยาวมากจนคำสั่งเดิมหมดอายุ จะส่งธรรมดาแล้วลบทิ้งอัตโนมัติ
             queue.textChannel.send(`❌ ข้ามเพลง **${track.title}** (ดึงไฟล์เสียงไม่สำเร็จ)`).then(msg => {
                 setTimeout(() => msg.delete().catch(()=>{}), 10000);
             });
@@ -47,10 +46,147 @@ async function playNext(guildId) {
     }
 }
 
-async function handleCommands(interaction) {
-    const commandName = interaction.commandName;
+// แยกระบบค้นหาเพลงออกมาเป็นฟังก์ชันเดี่ยว เพื่อให้ทั้งคำสั่งและปุ่มกดเรียกใช้ร่วมกันได้
+async function playLogic(interaction, query, isRandom = false) {
     const voiceChannel = interaction.member?.voice?.channel;
+    if (!voiceChannel) {
+        return interaction.reply({ content: '❌ คุณต้องอยู่ในห้องเสียงก่อนจึงจะสั่งบอทได้ครับ!', ephemeral: true });
+    }
 
+    let cleanQuery = query;
+    if (cleanQuery.includes('youtube.com/watch') && cleanQuery.includes('&list=')) {
+        cleanQuery = cleanQuery.split('&list=')[0];
+    }
+
+    // ถ้ากดปุ่มสุ่มเพลง ให้ขึ้นข้อความอีกแบบ
+    await interaction.reply({ content: isRandom ? '🎲 กำลังสุ่มเพลงให้คุณฟัง...' : '⏳ กำลังค้นหาเพลง...', ephemeral: true });
+
+    try {
+        let trackInfo = null;
+        if (cleanQuery.startsWith("http")) {
+            const info = await playdl.video_info(cleanQuery).catch(() => null) || await playdl.soundcloud(cleanQuery).catch(() => null);
+            if (info) {
+                trackInfo = {
+                    title: info.video_details?.title || info.name || "Unknown Title",
+                    url: info.video_details?.url || info.url,
+                    thumbnail: info.video_details?.thumbnails?.[0]?.url || info.thumbnail,
+                    author: info.video_details?.channel?.name || info.user?.name || "Unknown",
+                    duration: info.video_details?.durationRaw || (info.durationInSec ? `${Math.floor(info.durationInSec / 60)}:${(info.durationInSec % 60).toString().padStart(2, '0')}` : "Unknown"),
+                    requester: interaction.user,
+                    interaction: interaction 
+                };
+            }
+        } else {
+            const searchResults = await playdl.search(cleanQuery, { source: { soundcloud: 'tracks' }, limit: 1 }).catch(() => null);
+            if (searchResults && searchResults.length > 0) {
+                trackInfo = {
+                    title: searchResults[0].name || "Unknown Title",
+                    url: searchResults[0].url,
+                    thumbnail: searchResults[0].thumbnail,
+                    author: searchResults[0].user?.name || "SoundCloud",
+                    duration: searchResults[0].durationInSec ? `${Math.floor(searchResults[0].durationInSec / 60)}:${(searchResults[0].durationInSec % 60).toString().padStart(2, '0')}` : "Unknown",
+                    requester: interaction.user,
+                    interaction: interaction
+                };
+            }
+        }
+
+        if (!trackInfo) return interaction.editReply({ content: '❌ ค้นหาเพลงไม่เจอครับ ลองเปลี่ยนชื่อเพลงดูนะครับ' });
+
+        let queue = serverQueues.get(interaction.guild.id);
+        if (!queue) {
+            const connection = joinVoiceChannel({ channelId: voiceChannel.id, guildId: interaction.guild.id, adapterCreator: interaction.guild.voiceAdapterCreator });
+            connection.on('error', error => console.error(`[Connection Error] ${error.message}`));
+            
+            const player = createAudioPlayer();
+            connection.subscribe(player);
+
+            queue = { textChannel: interaction.channel, voiceChannel: voiceChannel, connection: connection, player: player, tracks: [], playing: false };
+            serverQueues.set(interaction.guild.id, queue);
+
+            player.on(AudioPlayerStatus.Idle, () => { queue.tracks.shift(); playNext(interaction.guild.id); });
+            player.on('error', error => { console.error(`[Player Error] ${error.message}`); queue.tracks.shift(); playNext(interaction.guild.id); });
+        }
+
+        queue.tracks.push(trackInfo);
+        
+        const queueEmbed = new EmbedBuilder()
+            .setColor('#2b2d31')
+            .setAuthor({ name: 'Deay Music Player', iconURL: interaction.client.user.displayAvatarURL() })
+            .setDescription(`Added to queue\n**${trackInfo.title}**\n${trackInfo.author} | \`${trackInfo.duration}\``)
+            .setFooter({ text: `Node: Deay Server | ${trackInfo.url}` });
+
+        if (trackInfo.thumbnail) queueEmbed.setImage(trackInfo.thumbnail);
+
+        await interaction.editReply({ content: '', embeds: [queueEmbed] });
+
+        if (!queue.playing) playNext(interaction.guild.id);
+
+    } catch (e) {
+        console.error(e);
+        return interaction.editReply({ content: `❌ เกิดข้อผิดพลาด: ${e.message}` });
+    }
+}
+
+async function handleCommands(interaction) {
+    // ----------------------------------------
+    // 1. จัดการการกดปุ่มต่างๆ (Button Interactions)
+    // ----------------------------------------
+    if (interaction.isButton()) {
+        if (interaction.customId === 'random_song') {
+            const randomSongs = [
+                "lofi hip hop radio - beats to relax/study to",
+                "จี่หอย",
+                "Shape of You",
+                "ตามตะวัน",
+                "ทรงอย่างแบด",
+                "Every Summertime"
+            ];
+            // สุ่ม 1 เพลงจากลิสต์ด้านบน
+            const randomQuery = randomSongs[Math.floor(Math.random() * randomSongs.length)];
+            return playLogic(interaction, randomQuery, true); // สั่งเล่นเพลง!
+        }
+        return;
+    }
+
+    // ----------------------------------------
+    // 2. จัดการคำสั่งพิมพ์ Slash Commands
+    // ----------------------------------------
+    const commandName = interaction.commandName;
+
+    // คำสั่งสร้างแผงควบคุม!
+    if (commandName === 'panel') {
+        const panelEmbed = new EmbedBuilder()
+            .setColor('#2b2d31')
+            .setAuthor({ name: `${interaction.client.user.username}'s - Music System`, iconURL: interaction.client.user.displayAvatarURL() })
+            .setTitle('ไม่มีเพลงที่กำลังเล่นอยู่ในขณะนี้')
+            .setDescription('ไม่มีเพลงฟังหรอ? ลองสุ่มเพลงดูสิ\n\n**Paste the song link or song name**')
+            .setImage('https://i.imgur.com/vHqBEM3.png') // ใส่แบนเนอร์สีฟ้าสวยๆ ให้ครับ
+            .setFooter({ text: 'Discord Support : discord.gg/xxxxx | Developer : Deay' });
+
+        const row = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('random_song') // ผูกกับดักจับด้านบน
+                    .setLabel('สุ่มเพลง')
+                    .setEmoji('🔄')
+                    .setStyle(ButtonStyle.Secondary),
+                new ButtonBuilder()
+                    .setLabel('เชิญบอท')
+                    .setEmoji('⏭️')
+                    .setURL(`https://discord.com/api/oauth2/authorize?client_id=${interaction.client.user.id}&permissions=8&scope=bot%20applications.commands`)
+                    .setStyle(ButtonStyle.Link)
+            );
+
+        return interaction.reply({ embeds: [panelEmbed], components: [row] });
+    }
+
+    if (commandName === 'play') {
+        const query = interaction.options.getString('query');
+        return playLogic(interaction, query, false);
+    }
+
+    const voiceChannel = interaction.member?.voice?.channel;
     if (!voiceChannel) {
         return interaction.reply({ content: '❌ คุณต้องอยู่ในห้องเสียงก่อนจึงจะสั่งบอทได้ครับ!', ephemeral: true });
     }
@@ -62,81 +198,6 @@ async function handleCommands(interaction) {
         nativePlayer.play(resource);
         connection.subscribe(nativePlayer);
         return interaction.reply({ content: "✅ กำลังทดสอบระบบเสียงพื้นฐาน (Native Test)...", ephemeral: true });
-    }
-
-    if (commandName === 'play') {
-        let cleanQuery = interaction.options.getString('query');
-        if (cleanQuery.includes('youtube.com/watch') && cleanQuery.includes('&list=')) {
-            cleanQuery = cleanQuery.split('&list=')[0];
-        }
-
-        await interaction.reply({ content: '⏳ กำลังค้นหาเพลง...', ephemeral: true });
-
-        try {
-            let trackInfo = null;
-            if (cleanQuery.startsWith("http")) {
-                const info = await playdl.video_info(cleanQuery).catch(() => null) || await playdl.soundcloud(cleanQuery).catch(() => null);
-                if (info) {
-                    trackInfo = {
-                        title: info.video_details?.title || info.name || "Unknown Title",
-                        url: info.video_details?.url || info.url,
-                        thumbnail: info.video_details?.thumbnails?.[0]?.url || info.thumbnail,
-                        author: info.video_details?.channel?.name || info.user?.name || "Unknown",
-                        duration: info.video_details?.durationRaw || (info.durationInSec ? `${Math.floor(info.durationInSec / 60)}:${(info.durationInSec % 60).toString().padStart(2, '0')}` : "Unknown"),
-                        requester: interaction.user,
-                        interaction: interaction // <-- จำว่าใครเป็นคนสั่ง เพื่อให้ตอน Error ส่งกลับไปถูกคน
-                    };
-                }
-            } else {
-                const searchResults = await playdl.search(cleanQuery, { source: { soundcloud: 'tracks' }, limit: 1 }).catch(() => null);
-                if (searchResults && searchResults.length > 0) {
-                    trackInfo = {
-                        title: searchResults[0].name || "Unknown Title",
-                        url: searchResults[0].url,
-                        thumbnail: searchResults[0].thumbnail,
-                        author: searchResults[0].user?.name || "SoundCloud",
-                        duration: searchResults[0].durationInSec ? `${Math.floor(searchResults[0].durationInSec / 60)}:${(searchResults[0].durationInSec % 60).toString().padStart(2, '0')}` : "Unknown",
-                        requester: interaction.user,
-                        interaction: interaction // <-- จำว่าใครเป็นคนสั่ง
-                    };
-                }
-            }
-
-            if (!trackInfo) return interaction.editReply({ content: '❌ ค้นหาเพลงไม่เจอครับ ลองเปลี่ยนชื่อเพลงดูนะครับ' });
-
-            let queue = serverQueues.get(interaction.guild.id);
-            if (!queue) {
-                const connection = joinVoiceChannel({ channelId: voiceChannel.id, guildId: interaction.guild.id, adapterCreator: interaction.guild.voiceAdapterCreator });
-                connection.on('error', error => console.error(`[Connection Error] ${error.message}`));
-                
-                const player = createAudioPlayer();
-                connection.subscribe(player);
-
-                queue = { textChannel: interaction.channel, voiceChannel: voiceChannel, connection: connection, player: player, tracks: [], playing: false };
-                serverQueues.set(interaction.guild.id, queue);
-
-                player.on(AudioPlayerStatus.Idle, () => { queue.tracks.shift(); playNext(interaction.guild.id); });
-                player.on('error', error => { console.error(`[Player Error] ${error.message}`); queue.tracks.shift(); playNext(interaction.guild.id); });
-            }
-
-            queue.tracks.push(trackInfo);
-            
-            const queueEmbed = new EmbedBuilder()
-                .setColor('#2b2d31')
-                .setAuthor({ name: 'Deay Music Player', iconURL: interaction.client.user.displayAvatarURL() })
-                .setDescription(`Added to queue\n**${trackInfo.title}**\n${trackInfo.author} | \`${trackInfo.duration}\``)
-                .setFooter({ text: `Node: Deay Server | ${trackInfo.url}` });
-
-            if (trackInfo.thumbnail) queueEmbed.setImage(trackInfo.thumbnail);
-
-            await interaction.editReply({ content: '', embeds: [queueEmbed] });
-
-            if (!queue.playing) playNext(interaction.guild.id);
-
-        } catch (e) {
-            console.error(e);
-            return interaction.editReply({ content: `❌ เกิดข้อผิดพลาด: ${e.message}` });
-        }
     }
 
     if (commandName === 'stop') {
