@@ -1,12 +1,21 @@
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('discord-voip');
 const playdl = require('play-dl');
-const { EmbedBuilder } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
 playdl.getFreeClientID().then((clientID) => {
     playdl.setToken({ soundcloud: { client_id: clientID } });
 }).catch(err => console.error("Could not set SoundCloud token:", err));
 
 const serverQueues = new Map();
+
+// สร้างแผงปุ่ม "ปิดข้อความ" เอาไว้ใช้ซ้ำ
+const closeButtonRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+        .setCustomId('delete_msg')
+        .setLabel('ปิดข้อความ')
+        .setStyle(ButtonStyle.Danger) // สีแดง
+        .setEmoji('🗑️')
+);
 
 async function playNext(guildId) {
     const queue = serverQueues.get(guildId);
@@ -22,9 +31,7 @@ async function playNext(guildId) {
 
     try {
         const stream = await playdl.stream(track.url);
-        const resource = createAudioResource(stream.stream, {
-            inputType: stream.type
-        });
+        const resource = createAudioResource(stream.stream, { inputType: stream.type });
 
         queue.player.play(resource);
 
@@ -43,12 +50,10 @@ async function playNext(guildId) {
             )
             .setFooter({ text: `Node: Deay Server | ${track.url}` });
             
-        // เช็คว่าถ้ามีรูปปกเพลงจริงๆ ค่อยใส่รูป จะได้ไม่ขึ้นรูปลิงก์พัง
-        if (track.thumbnail) {
-            embed.setImage(track.thumbnail);
-        }
+        if (track.thumbnail) embed.setImage(track.thumbnail);
 
-        queue.textChannel.send({ embeds: [embed] });
+        // แปะปุ่มปิดข้อความลงไปใต้ Embed ด้วย
+        queue.textChannel.send({ embeds: [embed], components: [closeButtonRow] });
 
     } catch (error) {
         console.error(`[Error] เล่นเพลงไม่ได้: ${error.message}`);
@@ -64,9 +69,7 @@ async function handleCommands(message) {
 
     const voiceChannel = message.member?.voice?.channel;
     if (!voiceChannel) {
-        if (['play', 'stop', 'skip', 'testplay', 'queue'].includes(commandName)) {
-            return message.reply('❌ คุณต้องอยู่ในห้องเสียงก่อนจึงจะสั่งบอทได้ครับ!');
-        }
+        if (['play', 'stop', 'skip', 'testplay', 'queue'].includes(commandName)) return message.reply('❌ คุณต้องอยู่ในห้องเสียงก่อนจึงจะสั่งบอทได้ครับ!');
         return;
     }
 
@@ -90,7 +93,6 @@ async function handleCommands(message) {
 
         try {
             let trackInfo = null;
-
             if (cleanQuery.startsWith("http")) {
                 const info = await playdl.video_info(cleanQuery).catch(() => null) || await playdl.soundcloud(cleanQuery).catch(() => null);
                 if (info) {
@@ -142,15 +144,10 @@ async function handleCommands(message) {
                 .setDescription(`Added to queue\n**${trackInfo.title}**\n${trackInfo.author} | \`${trackInfo.duration}\``)
                 .setFooter({ text: `Node: Deay Server | ${trackInfo.url}` });
 
-            if (trackInfo.thumbnail) {
-                queueEmbed.setImage(trackInfo.thumbnail);
-            }
+            if (trackInfo.thumbnail) queueEmbed.setImage(trackInfo.thumbnail);
 
-            await replyMessage.edit({ content: '', embeds: [queueEmbed] });
-
-            setTimeout(() => {
-                replyMessage.delete().catch(() => {});
-            }, 10000);
+            // ใส่ปุ่มปิดข้อความลงไปใน Embed ด้วย
+            await replyMessage.edit({ content: '', embeds: [queueEmbed], components: [closeButtonRow] });
 
             if (!queue.playing) playNext(message.guild.id);
 
