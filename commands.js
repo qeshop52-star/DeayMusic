@@ -51,7 +51,7 @@ function getNowPlayingPanel(track, client, voiceChannel) {
             { name: '🔊 ช่องเสียง', value: `🔊 ${voiceChannel.name}`, inline: true },
             { name: '✨ เชิญบอท', value: `[Invite](https://discord.com/api/oauth2/authorize?client_id=${client.user.id}&permissions=8&scope=bot%20applications.commands)`, inline: true }
         )
-        .setImage('https://i.imgur.com/vHqBEM3.png') 
+        .setImage('https://static0.cbrimages.com/wordpress/wp-content/uploads/2020/10/cleaning.jpg') 
         .setFooter({ text: 'ถ้าชอบเพลงนี้พิมพ์ /play เพื่อเล่นเพลงต่อได้เลย' });
 
     const row = new ActionRowBuilder()
