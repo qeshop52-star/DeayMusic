@@ -19,7 +19,7 @@ async function playNext(guildId) {
         return;
     }
 
-    const track = queue.tracks[0];
+    const stream = await playdl.stream(track.url, { quality: 2 });
     queue.playing = true;
 
     try {
