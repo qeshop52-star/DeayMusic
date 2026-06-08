@@ -7,16 +7,15 @@ playdl.getFreeClientID().then((clientID) => {
 }).catch(err => console.error("Could not set SoundCloud token:", err));
 
 const serverQueues = new Map();
-const serverPanels = new Map(); // เก็บตัวแปรเพื่อจดจำแผงควบคุมของแต่ละเซิฟเวอร์
+const serverPanels = new Map(); 
 
-// ฟังก์ชัน 1: โครงสร้างแผงควบคุมตอน "ไม่มีเพลงเล่น"
 function getDefaultPanel(client) {
     const embed = new EmbedBuilder()
         .setColor('#2b2d31')
         .setAuthor({ name: `${client.user.username}'s - Music System`, iconURL: client.user.displayAvatarURL() })
         .setTitle('ไม่มีเพลงที่กำลังเล่นอยู่ในขณะนี้')
         .setDescription('ไม่มีเพลงฟังหรอ? ลองสุ่มเพลงดูสิ\n\n**Paste the song link or song name**')
-        .setImage('https://static0.cbrimages.com/wordpress/wp-content/uploads/2020/10/cleaning.jpg') 
+        .setImage('https://i.imgur.com/vHqBEM3.png') // <--- เปลี่ยนลิงก์รูปตรงนี้ได้เลยนะครับ!
         .setFooter({ text: 'Discord Support : discord.gg/xxxxx | Developer : Deay' });
 
     const row = new ActionRowBuilder()
@@ -36,7 +35,6 @@ function getDefaultPanel(client) {
     return { embeds: [embed], components: [row] };
 }
 
-// ฟังก์ชัน 2: โครงสร้างแผงควบคุมตอน "กำลังเล่นเพลง"
 function getNowPlayingPanel(track, client, voiceChannel) {
     const embed = new EmbedBuilder()
         .setColor('#2b2d31')
@@ -51,7 +49,7 @@ function getNowPlayingPanel(track, client, voiceChannel) {
             { name: '🔊 ช่องเสียง', value: `🔊 ${voiceChannel.name}`, inline: true },
             { name: '✨ เชิญบอท', value: `[Invite](https://discord.com/api/oauth2/authorize?client_id=${client.user.id}&permissions=8&scope=bot%20applications.commands)`, inline: true }
         )
-        .setImage('https://static0.cbrimages.com/wordpress/wp-content/uploads/2020/10/cleaning.jpg') 
+        .setImage('https://i.imgur.com/vHqBEM3.png')  // <--- เปลี่ยนลิงก์รูปตรงนี้ได้เลยนะครับ!
         .setFooter({ text: 'ถ้าชอบเพลงนี้พิมพ์ /play เพื่อเล่นเพลงต่อได้เลย' });
 
     const row = new ActionRowBuilder()
@@ -71,7 +69,6 @@ function getNowPlayingPanel(track, client, voiceChannel) {
     return { embeds: [embed], components: [row] };
 }
 
-// ฟังก์ชัน 3: สั่งให้แผงควบคุมอัปเดตหน้าตาตามสถานะปัจจุบัน
 async function updatePanelState(guildId) {
     const queue = serverQueues.get(guildId);
     const panelMsg = serverPanels.get(guildId);
@@ -79,10 +76,8 @@ async function updatePanelState(guildId) {
 
     try {
         if (!queue || queue.tracks.length === 0) {
-            // ถ้าคิวว่างเปล่า ให้คืนร่างแผงกลับเป็นหน้าเดิม
             await panelMsg.edit(getDefaultPanel(panelMsg.client));
         } else {
-            // ถ้ามีเพลงเล่นอยู่ ให้เปลี่ยนแผงเป็นหน้าตาตารางเพลง
             const currentTrack = queue.tracks[0];
             await panelMsg.edit(getNowPlayingPanel(currentTrack, panelMsg.client, queue.voiceChannel));
         }
@@ -97,13 +92,13 @@ async function playNext(guildId) {
 
     if (queue.tracks.length === 0) {
         queue.playing = false;
-        updatePanelState(guildId); // พอเพลงจบหมดคิว สั่งให้แผงเปลี่ยนกลับหน้าเดิม!
+        updatePanelState(guildId); 
         return;
     }
 
     const track = queue.tracks[0];
     queue.playing = true;
-    updatePanelState(guildId); // พอเพลงเริ่มเล่น สั่งให้แผงเปลี่ยนเป็นรูปข้อมูลเพลง!
+    updatePanelState(guildId); 
 
     try {
         const stream = await playdl.stream(track.url);
@@ -141,9 +136,8 @@ async function playLogic(interaction, query, isRandom = false) {
         cleanQuery = cleanQuery.split('&list=')[0];
     }
 
-    // แยกระบบตอบรับระหว่างปุ่มกด กับการพิมพ์คำสั่งปกติ
     if (interaction.isButton()) {
-        await interaction.deferUpdate(); // ให้ปุ่มหยุดหมุน
+        await interaction.deferUpdate(); 
         await interaction.followUp({ content: isRandom ? '🎲 กำลังสุ่มเพลงให้คุณฟัง...' : '⏳ กำลังค้นหาเพลง...', flags: MessageFlags.Ephemeral });
     } else {
         await interaction.reply({ content: '⏳ กำลังค้นหาเพลง...', flags: MessageFlags.Ephemeral });
@@ -162,7 +156,7 @@ async function playLogic(interaction, query, isRandom = false) {
                     duration: info.video_details?.durationRaw || (info.durationInSec ? `${Math.floor(info.durationInSec / 60)}:${(info.durationInSec % 60).toString().padStart(2, '0')}` : "Unknown"),
                     requester: interaction.user,
                     interaction: interaction,
-                    isRandom: isRandom // ส่งข้อมูลให้รู้ว่าเกิดจากการกดปุ่มสุ่ม
+                    isRandom: isRandom 
                 };
             }
         } else {
@@ -206,7 +200,6 @@ async function playLogic(interaction, query, isRandom = false) {
 
         queue.tracks.push(trackInfo);
         
-        // ตอบกลับเบาๆ แบบเห็นเฉพาะเราว่าเพิ่มเพลงลงคิวแล้ว (ไม่ต้องโชว์กรอบใหญ่กวนแชท)
         const addMsg = `✅ เพิ่มเพลง **${trackInfo.title}** ลงคิวแล้ว`;
         if (interaction.isButton()) {
             await interaction.followUp({ content: addMsg, flags: MessageFlags.Ephemeral });
@@ -215,7 +208,6 @@ async function playLogic(interaction, query, isRandom = false) {
         }
 
         if (!queue.playing) playNext(interaction.guild.id);
-        // ถ้าคิวเดินอยู่แล้ว ไม่ต้องอัปเดตแผง เดี๋ยวมันอัปเดตเองตอนเพลงถึงคิว
 
     } catch (e) {
         console.error(e);
@@ -241,7 +233,6 @@ async function handleCommands(interaction) {
             ];
             const randomQuery = randomSongs[Math.floor(Math.random() * randomSongs.length)];
             
-            // สำคัญ! บันทึกว่าแผงควบคุมคือข้อความนี้นะ จะได้กลับมาแก้ไขถูก
             serverPanels.set(interaction.guild.id, interaction.message);
 
             return playLogic(interaction, randomQuery, true); 
@@ -251,16 +242,38 @@ async function handleCommands(interaction) {
 
     const commandName = interaction.commandName;
 
+    // ระบบสร้างห้องแชทอัตโนมัติเมื่อพิมพ์ /panel
     if (commandName === 'panel') {
-        // ใช้ fetchReply เพื่อเอา message ก้อนนี้ไปบันทึกเป็นแผงควบคุมหลัก
-        const msg = await interaction.reply({ ...getDefaultPanel(interaction.client), fetchReply: true });
+        // ให้บอทตอบกลับแบบโหลดรอก่อน (กัน Error ตอบกลับช้า)
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral }); 
+
+        // ลองค้นหาดูว่ามีห้องชื่อ deaymusic อยู่แล้วหรือยัง
+        let targetChannel = interaction.guild.channels.cache.find(c => c.name === 'deaymusic');
+        
+        // ถ้ายังไม่มี ให้สร้างขึ้นมาใหม่!
+        if (!targetChannel) {
+            try {
+                targetChannel = await interaction.guild.channels.create({
+                    name: 'deaymusic',
+                    type: 0 // ประเภท 0 คือห้องข้อความ (Text Channel)
+                });
+            } catch (err) {
+                console.error(err);
+                return interaction.followUp({ content: '❌ บอทไม่สามารถสร้างห้องได้ครับ โปรดตรวจสอบให้แน่ใจว่าบอทมีสิทธิ์ Manage Channels ในเซิฟเวอร์นี้', flags: MessageFlags.Ephemeral });
+            }
+        }
+
+        // เอาแผงควบคุม ไปวางในห้องเป้าหมาย
+        const msg = await targetChannel.send(getDefaultPanel(interaction.client));
         
         // บันทึกแผงลงระบบความจำของเซิฟเวอร์
         serverPanels.set(interaction.guild.id, msg);
         
         // ถ้าระหว่างเรียกแผงใหม่ มีเพลงเล่นอยู่พอดี ให้มันอัปเดตโชว์เพลงทันที
         updatePanelState(interaction.guild.id);
-        return;
+        
+        // แจ้งเตือนคนพิมพ์ /panel
+        return interaction.followUp({ content: `✅ สร้างห้องและวางแผงควบคุมเรียบร้อยแล้ว แวะไปดูได้ที่ ${targetChannel} ครับ!`, flags: MessageFlags.Ephemeral });
     }
 
     if (commandName === 'play') {
@@ -287,7 +300,6 @@ async function handleCommands(interaction) {
         if (!queue) return interaction.reply({ content: '❌ ตอนนี้ไม่มีเพลงเล่นอยู่ครับ', flags: MessageFlags.Ephemeral });
         queue.tracks = []; queue.player.stop(); queue.connection.destroy(); serverQueues.delete(interaction.guild.id);
         
-        // สั่งให้แผงกลับเป็นหน้าเดิมหลังหยุดเพลง
         updatePanelState(interaction.guild.id); 
 
         return interaction.reply({ content: '🛑 หยุดเพลง ล้างคิว และออกจากห้องเรียบร้อยแล้วครับ', flags: MessageFlags.Ephemeral });
