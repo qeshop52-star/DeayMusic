@@ -1,7 +1,7 @@
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('discord-voip');
 const playdl = require('play-dl');
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags, StringSelectMenuBuilder } = require('discord.js');
-const https = require('https'); // นำเข้าระบบโหลดข้อมูลผ่านเว็บ
+const https = require('https'); 
 
 playdl.getFreeClientID().then((clientID) => {
     playdl.setToken({ soundcloud: { client_id: clientID } });
@@ -10,9 +10,6 @@ playdl.getFreeClientID().then((clientID) => {
 const serverQueues = new Map();
 const serverPanels = new Map(); 
 
-// ----------------------------------------
-// วิชาลับ: ฟังก์ชันแอบดึงข้อมูล YouTube แบบไม่ให้โดนบล็อก (oEmbed API)
-// ----------------------------------------
 function fetchYouTubeOEmbed(url) {
     return new Promise((resolve) => {
         https.get(`https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`, (res) => {
@@ -140,9 +137,31 @@ async function playNext(guildId) {
     updatePanelState(guildId); 
 
     try {
-        const stream = await playdl.stream(track.url);
-        const resource = createAudioResource(stream.stream, { inputType: stream.type });
+        let stream;
+        try {
+            // ลองดึงไฟล์เสียงแบบปกติก่อน
+            stream = await playdl.stream(track.url);
+        } catch (e) {
+            // ระบบยางอะไหล่: ถ้าไฟล์พัง (อาจจะติด Premium หรือ YouTube บล็อก)
+            // ให้บอทลองค้นหาเพลงเวอร์ชั่นอื่นๆ จาก SoundCloud แทน
+            console.log("Stream failed, trying fallback search...");
+            const cleanTitleForFallback = track.title.replace(/\[.*?\]|\(.*?\)/g, '').trim() || track.title;
+            const fallbackSearch = await playdl.search(cleanTitleForFallback, { source: { soundcloud: 'tracks' }, limit: 3 }).catch(() => null);
+            
+            if (fallbackSearch && fallbackSearch.length > 0) {
+                // ลองไล่เปิดเพลงเวอร์ชั่นอื่นดู
+                for (let i = 0; i < fallbackSearch.length; i++) {
+                    try {
+                        stream = await playdl.stream(fallbackSearch[i].url);
+                        track.url = fallbackSearch[i].url; // แอบเปลี่ยน URL ในคิวซะเลย
+                        break; // เปิดติดแล้ว ออกจากลูป
+                    } catch (err) {}
+                }
+            }
+            if (!stream) throw e; // ถ้าไล่หาแล้วก็ยังไม่ติด ยอมแพ้
+        }
         
+        const resource = createAudioResource(stream.stream, { inputType: stream.type });
         queue.player.play(resource);
 
     } catch (error) {
@@ -190,21 +209,19 @@ async function playLogic(interaction, query, isRandom = false) {
     try {
         let trackInfo = null;
         if (cleanQuery.startsWith("http")) {
-            
-            // ----------------------------------------
-            // ระบบทะลวงบล็อก YouTube!
-            // ----------------------------------------
             if (cleanQuery.includes('youtube.com') || cleanQuery.includes('youtu.be')) {
                 const ytData = await fetchYouTubeOEmbed(cleanQuery);
                 if (ytData) {
-                    // เอาชื่อเพลงจาก YouTube ไปค้นหาใน SoundCloud เพื่อดึงเสียงแบบลื่นๆ
-                    const searchResults = await playdl.search(ytData.title, { source: { soundcloud: 'tracks' }, limit: 1 }).catch(() => null);
+                    // กรองชื่อเพลง ลบข้อความในวงเล็บทิ้ง (เช่น Visualizer, Official Video) เพื่อให้หาง่ายขึ้น
+                    const cleanTitle = ytData.title.replace(/\[.*?\]|\(.*?\)/g, '').trim() || ytData.title;
+                    
+                    const searchResults = await playdl.search(cleanTitle, { source: { soundcloud: 'tracks' }, limit: 1 }).catch(() => null);
                     if (searchResults && searchResults.length > 0) {
                         trackInfo = {
-                            title: ytData.title, // ชื่อเพลงจาก YouTube 
-                            url: searchResults[0].url, // ลิงก์เสียงจาก SoundCloud
-                            thumbnail: ytData.thumbnail_url, // หน้าปกจาก YouTube
-                            author: ytData.author_name, // ชื่อช่อง YouTube
+                            title: ytData.title, 
+                            url: searchResults[0].url, 
+                            thumbnail: ytData.thumbnail_url, 
+                            author: ytData.author_name, 
                             duration: searchResults[0].durationInSec ? `${Math.floor(searchResults[0].durationInSec / 60)}:${(searchResults[0].durationInSec % 60).toString().padStart(2, '0')}` : "Unknown",
                             requester: interaction.user,
                             interaction: interaction,
@@ -214,7 +231,6 @@ async function playLogic(interaction, query, isRandom = false) {
                 }
             }
 
-            // ถ้าไม่ใช่ YouTube หรือระบบดึงรูปด้านบนล้มเหลว ให้กลับไปใช้วิธีปกติ
             if (!trackInfo) {
                 const info = await playdl.soundcloud(cleanQuery).catch(() => null) || await playdl.video_info(cleanQuery).catch(() => null);
                 if (info) {
@@ -247,7 +263,7 @@ async function playLogic(interaction, query, isRandom = false) {
         }
 
         if (!trackInfo) {
-            const errorMsg = '❌ ค้นหาเพลงไม่เจอ หรือ YouTube อาจจะบล็อกคลิปนี้แบบ 100% ไปแล้วครับ แนะนำให้ลอง **พิมพ์เป็นชื่อเพลง** แทนลิงก์นะครับ!';
+            const errorMsg = '❌ ค้นหาเพลงไม่เจอ แนะนำให้ลอง **พิมพ์เป็นชื่อเพลง** แทนนะครับ!';
             if (interaction.isButton() || interaction.isStringSelectMenu()) {
                 return interaction.followUp({ content: errorMsg, flags: MessageFlags.Ephemeral });
             } else {
