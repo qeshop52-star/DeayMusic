@@ -1,6 +1,6 @@
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('@discordjs/voice');
 const playdl = require('play-dl');
-
+const { EmbedBuilder } = require('discord.js');
 // แก้ปัญหา 'client_id' undefined ของ SoundCloud
 playdl.getFreeClientID().then((clientID) => {
     playdl.setToken({ soundcloud: { client_id: clientID } });
