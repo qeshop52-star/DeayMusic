@@ -23,26 +23,11 @@ async function playNext(guildId) {
     try {
         const stream = await playdl.stream(track.url);
         const resource = createAudioResource(stream.stream, { inputType: stream.type });
+        
         queue.player.play(resource);
 
-        const embed = new EmbedBuilder()
-            .setColor('#ff99cc') 
-            .setAuthor({ name: 'Deay Music Room', iconURL: queue.textChannel.client.user.displayAvatarURL() })
-            .setTitle(track.title)
-            .setURL(track.url)
-            .addFields(
-                { name: '👤 Author:', value: `└ ${track.author}`, inline: true },
-                { name: '🕒 Duration:', value: `└ ${track.duration}`, inline: true },
-                { name: '🎶 Queues:', value: `└ ${queue.tracks.length - 1}`, inline: true },
-                { name: '👤 Requester:', value: `└ <@${track.requester.id}>`, inline: true },
-                { name: '🔊 Room:', value: `└ ${queue.voiceChannel.name}`, inline: true },
-                { name: '👑 Support:', value: `└ [แจ้งปัญหาคลิก!](https://discord.com)`, inline: true }
-            )
-            .setFooter({ text: `Node: Deay Server | ${track.url}` });
-            
-        if (track.thumbnail) embed.setImage(track.thumbnail);
-
-        queue.textChannel.send({ embeds: [embed] });
+        // ลบระบบส่งข้อความตอนเพลงเล่นออกไปแล้วตามสั่งครับ!
+        // บอทจะเปิดเพลงเฉยๆ โดยไม่ส่งข้อความอะไรมารกห้องแชทแล้วครับ
 
     } catch (error) {
         console.error(`[Error] เล่นเพลงไม่ได้: ${error.message}`);
@@ -57,7 +42,6 @@ async function handleCommands(interaction) {
     const voiceChannel = interaction.member?.voice?.channel;
 
     if (!voiceChannel) {
-        // ใช้ interaction.reply แบบ ephemeral: true คือการสั่งให้ "เห็นเฉพาะเรา"
         return interaction.reply({ content: '❌ คุณต้องอยู่ในห้องเสียงก่อนจึงจะสั่งบอทได้ครับ!', ephemeral: true });
     }
 
@@ -76,7 +60,6 @@ async function handleCommands(interaction) {
             cleanQuery = cleanQuery.split('&list=')[0];
         }
 
-        // ตอบกลับแบบ "เห็นเฉพาะเรา" ทันทีว่ากำลังโหลด
         await interaction.reply({ content: '⏳ กำลังค้นหาเพลง...', ephemeral: true });
 
         try {
@@ -126,7 +109,6 @@ async function handleCommands(interaction) {
 
             queue.tracks.push(trackInfo);
             
-            // หน้าต่างเวลาเพิ่มลงคิว (แบบเห็นเฉพาะเรา!)
             const queueEmbed = new EmbedBuilder()
                 .setColor('#2b2d31')
                 .setAuthor({ name: 'Deay Music Player', iconURL: interaction.client.user.displayAvatarURL() })
@@ -135,7 +117,6 @@ async function handleCommands(interaction) {
 
             if (trackInfo.thumbnail) queueEmbed.setImage(trackInfo.thumbnail);
 
-            // แก้ไขข้อความตอนค้นหา ให้กลายเป็นหน้าต่าง Embed (จะยังคงแสดง "เห็นเฉพาะเรา" อยู่!)
             await interaction.editReply({ content: '', embeds: [queueEmbed] });
 
             if (!queue.playing) playNext(interaction.guild.id);
