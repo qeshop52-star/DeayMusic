@@ -1,11 +1,13 @@
 require('dotenv').config();
 const http = require('http');
 http.createServer((req, res) => res.end('Bot is alive!')).listen(process.env.PORT || 10000);
+
 const dns = require('node:dns');
+dns.setDefaultResultOrder('ipv4first');
 const ffmpeg = require('@ffmpeg-installer/ffmpeg');
 process.env.FFMPEG_PATH = ffmpeg.path;
 
-const { Client, GatewayIntentBits } = require('discord.js');
+const { Client, GatewayIntentBits, SlashCommandBuilder } = require('discord.js');
 const handleCommands = require('./commands');
 
 const client = new Client({
@@ -17,35 +19,51 @@ const client = new Client({
     ]
 });
 
+// สร้างลิสต์คำสั่ง Slash Commands ทัั้งหมดของบอทเรา
+const commands = [
+    new SlashCommandBuilder()
+        .setName('play')
+        .setDescription('เล่นเพลงจากชื่อเพลงหรือลิงก์')
+        .addStringOption(option => 
+            option.setName('query')
+                .setDescription('ชื่อเพลงหรือลิงก์ YouTube/SoundCloud')
+                .setRequired(true)), // บังคับให้พิมพ์ชื่อเพลง
+    new SlashCommandBuilder()
+        .setName('stop')
+        .setDescription('หยุดเพลง ล้างคิว และออกจากห้อง'),
+    new SlashCommandBuilder()
+        .setName('skip')
+        .setDescription('ข้ามเพลงปัจจุบัน'),
+    new SlashCommandBuilder()
+        .setName('queue')
+        .setDescription('ดูคิวเพลงปัจจุบัน'),
+    new SlashCommandBuilder()
+        .setName('testplay')
+        .setDescription('ทดสอบระบบเสียง')
+].map(command => command.toJSON());
 
-client.on('ready', () => {
+// เมื่อบอทพร้อมทำงาน ให้ลงทะเบียนคำสั่งเข้าเซิร์ฟเวอร์
+client.on('ready', async () => {
     console.log(`✅ บอทออนไลน์สำเร็จในชื่อ ${client.user.tag}!`);
-    console.log('🎵 ระบบพร้อมสำหรับเปิดเพลงแล้ว');
-});
-
-client.on('messageCreate', async (message) => {
-    // ข้ามข้อความที่บอทพิมพ์เอง
-    if (message.author.bot) return;
-
-    // ถ้ามีคนส่งลิงก์ URL มาเฉยๆ ให้บอทแอบเติม !play เข้าไปอัตโนมัติ
-    if (message.content.startsWith('http')) {
-        message.content = '!play ' + message.content;
+    console.log('🎵 ระบบ Slash Commands พร้อมใช้งานแล้ว');
+    
+    // อัปเดตเมนูคำสั่ง / ลงไปในดิสคอร์ดของคุณ
+    for (const guild of client.guilds.cache.values()) {
+        try {
+            await guild.commands.set(commands);
+            console.log(`[Slash Command] ติดตั้งเมนูคำสั่งใน: ${guild.name} เรียบร้อยแล้ว`);
+        } catch (err) {
+            console.error(`[Error] ติดตั้งเมนูคำสั่งไม่สำเร็จใน: ${guild.name}`);
+        }
     }
-
-    // ถ้าไม่ใช่คำสั่งที่ขึ้นต้นด้วย ! ก็ให้บอทเมินไป (ป้องกันบอทรวนเวลาคนคุยกันปกติ)
-    if (!message.content.startsWith('!')) return;
-
-    await handleCommands(message);
 });
 
+// ดักจับเวลาคนพิมพ์ /play (เปลี่ยนจาก messageCreate เป็น interactionCreate)
 client.on('interactionCreate', async (interaction) => {
-    if (!interaction.isButton()) return;
-    if (interaction.customId === 'delete_msg') {
-        await interaction.message.delete().catch(() => {}); // พอกดปุ่มปิด ให้ลบข้อความนี้ทิ้ง
-    }
+    if (!interaction.isChatInputCommand()) return; 
+    await handleCommands(interaction);
 });
 
-// เริ่มเชื่อมต่อบอทด้วย Token
 client.login(process.env.DISCORD_TOKEN).catch(err => {
-    console.error("❌ ไม่สามารถล็อกอินได้ โปรดตรวจสอบว่าใส่ Token ในไฟล์ .env ถูกต้องหรือไม่", err);
+    console.error("❌ ไม่สามารถล็อกอินได้ โปรดตรวจสอบ Token", err);
 });
