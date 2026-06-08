@@ -1,30 +1,10 @@
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('discord-voip');
-const playdl = require('play-dl');
+const ytdl = require('@distube/ytdl-core'); // เครื่องยนต์ดึงเสียงใหม่!
+const ytSearch = require('yt-search'); // ระบบค้นหาใหม่!
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags, StringSelectMenuBuilder } = require('discord.js');
-const https = require('https'); 
-
-playdl.getFreeClientID().then((clientID) => {
-    playdl.setToken({ soundcloud: { client_id: clientID } });
-}).catch(err => console.error("Could not set SoundCloud token:", err));
 
 const serverQueues = new Map();
 const serverPanels = new Map(); 
-
-function fetchYouTubeOEmbed(url) {
-    return new Promise((resolve) => {
-        https.get(`https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`, (res) => {
-            let data = '';
-            res.on('data', chunk => data += chunk);
-            res.on('end', () => {
-                if (res.statusCode === 200) {
-                    try { resolve(JSON.parse(data)); } catch (e) { resolve(null); }
-                } else {
-                    resolve(null);
-                }
-            });
-        }).on('error', () => resolve(null));
-    });
-}
 
 function getControllerComponents() {
     const row1 = new ActionRowBuilder().addComponents(
@@ -137,31 +117,14 @@ async function playNext(guildId) {
     updatePanelState(guildId); 
 
     try {
-        let stream;
-        try {
-            // ลองดึงไฟล์เสียงแบบปกติก่อน
-            stream = await playdl.stream(track.url);
-        } catch (e) {
-            // ระบบยางอะไหล่: ถ้าไฟล์พัง (อาจจะติด Premium หรือ YouTube บล็อก)
-            // ให้บอทลองค้นหาเพลงเวอร์ชั่นอื่นๆ จาก SoundCloud แทน
-            console.log("Stream failed, trying fallback search...");
-            const cleanTitleForFallback = track.title.replace(/\[.*?\]|\(.*?\)/g, '').trim() || track.title;
-            const fallbackSearch = await playdl.search(cleanTitleForFallback, { source: { soundcloud: 'tracks' }, limit: 3 }).catch(() => null);
-            
-            if (fallbackSearch && fallbackSearch.length > 0) {
-                // ลองไล่เปิดเพลงเวอร์ชั่นอื่นดู
-                for (let i = 0; i < fallbackSearch.length; i++) {
-                    try {
-                        stream = await playdl.stream(fallbackSearch[i].url);
-                        track.url = fallbackSearch[i].url; // แอบเปลี่ยน URL ในคิวซะเลย
-                        break; // เปิดติดแล้ว ออกจากลูป
-                    } catch (err) {}
-                }
-            }
-            if (!stream) throw e; // ถ้าไล่หาแล้วก็ยังไม่ติด ยอมแพ้
-        }
-        
-        const resource = createAudioResource(stream.stream, { inputType: stream.type });
+        // ใช้ ytdl-core ดึงเสียงตรงจาก YouTube! ลื่นปรี๊ดดด!
+        const stream = ytdl(track.url, { 
+            filter: 'audioonly', 
+            quality: 'highestaudio',
+            highWaterMark: 1 << 25 
+        });
+
+        const resource = createAudioResource(stream);
         queue.player.play(resource);
 
     } catch (error) {
@@ -208,62 +171,42 @@ async function playLogic(interaction, query, isRandom = false) {
 
     try {
         let trackInfo = null;
-        if (cleanQuery.startsWith("http")) {
-            if (cleanQuery.includes('youtube.com') || cleanQuery.includes('youtu.be')) {
-                const ytData = await fetchYouTubeOEmbed(cleanQuery);
-                if (ytData) {
-                    // กรองชื่อเพลง ลบข้อความในวงเล็บทิ้ง (เช่น Visualizer, Official Video) เพื่อให้หาง่ายขึ้น
-                    const cleanTitle = ytData.title.replace(/\[.*?\]|\(.*?\)/g, '').trim() || ytData.title;
-                    
-                    const searchResults = await playdl.search(cleanTitle, { source: { soundcloud: 'tracks' }, limit: 1 }).catch(() => null);
-                    if (searchResults && searchResults.length > 0) {
-                        trackInfo = {
-                            title: ytData.title, 
-                            url: searchResults[0].url, 
-                            thumbnail: ytData.thumbnail_url, 
-                            author: ytData.author_name, 
-                            duration: searchResults[0].durationInSec ? `${Math.floor(searchResults[0].durationInSec / 60)}:${(searchResults[0].durationInSec % 60).toString().padStart(2, '0')}` : "Unknown",
-                            requester: interaction.user,
-                            interaction: interaction,
-                            isRandom: isRandom
-                        };
-                    }
-                }
-            }
 
-            if (!trackInfo) {
-                const info = await playdl.soundcloud(cleanQuery).catch(() => null) || await playdl.video_info(cleanQuery).catch(() => null);
-                if (info) {
-                    trackInfo = {
-                        title: info.video_details?.title || info.name || "Unknown Title",
-                        url: info.video_details?.url || info.url,
-                        thumbnail: info.video_details?.thumbnails?.[0]?.url || info.thumbnail,
-                        author: info.video_details?.channel?.name || info.user?.name || "Unknown",
-                        duration: info.video_details?.durationRaw || (info.durationInSec ? `${Math.floor(info.durationInSec / 60)}:${(info.durationInSec % 60).toString().padStart(2, '0')}` : "Unknown"),
-                        requester: interaction.user,
-                        interaction: interaction,
-                        isRandom: isRandom 
-                    };
-                }
-            }
-        } else {
-            const searchResults = await playdl.search(cleanQuery, { source: { soundcloud: 'tracks' }, limit: 1 }).catch(() => null);
-            if (searchResults && searchResults.length > 0) {
+        if (cleanQuery.startsWith("http")) {
+            // ถ้าวางลิงก์ ให้เครื่องยนต์ ytdl จัดการดึงข้อมูลคลิป
+            const info = await ytdl.getBasicInfo(cleanQuery).catch(() => null);
+            if (info) {
                 trackInfo = {
-                    title: searchResults[0].name || "Unknown Title",
-                    url: searchResults[0].url,
-                    thumbnail: searchResults[0].thumbnail,
-                    author: searchResults[0].user?.name || "SoundCloud",
-                    duration: searchResults[0].durationInSec ? `${Math.floor(searchResults[0].durationInSec / 60)}:${(searchResults[0].durationInSec % 60).toString().padStart(2, '0')}` : "Unknown",
+                    title: info.videoDetails.title,
+                    url: info.videoDetails.video_url,
+                    thumbnail: info.videoDetails.thumbnails[0].url,
+                    author: info.videoDetails.author.name,
+                    duration: `${Math.floor(info.videoDetails.lengthSeconds / 60)}:${(info.videoDetails.lengthSeconds % 60).toString().padStart(2, '0')}`,
                     requester: interaction.user,
                     interaction: interaction,
                     isRandom: isRandom
                 };
             }
+        } else {
+            // ถ้าพิมพ์ชื่อเพลง ให้ ytSearch จัดการค้นหา
+            const r = await ytSearch(cleanQuery).catch(() => null);
+            if (r && r.videos.length > 0) {
+                const searchResult = r.videos[0];
+                trackInfo = {
+                    title: searchResult.title,
+                    url: searchResult.url,
+                    thumbnail: searchResult.thumbnail || searchResult.image,
+                    author: searchResult.author?.name || "Unknown",
+                    duration: searchResult.timestamp || "Unknown",
+                    requester: interaction.user,
+                    interaction: interaction,
+                    isRandom: isRandom 
+                };
+            }
         }
 
         if (!trackInfo) {
-            const errorMsg = '❌ ค้นหาเพลงไม่เจอ แนะนำให้ลอง **พิมพ์เป็นชื่อเพลง** แทนนะครับ!';
+            const errorMsg = '❌ ค้นหาเพลงไม่เจอ แนะนำให้ตรวจสอบชื่อเพลงหรือลิงก์ใหม่นะครับ!';
             if (interaction.isButton() || interaction.isStringSelectMenu()) {
                 return interaction.followUp({ content: errorMsg, flags: MessageFlags.Ephemeral });
             } else {
