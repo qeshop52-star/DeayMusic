@@ -1,7 +1,10 @@
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('@discordjs/voice');
 const playdl = require('play-dl');
-const { EmbedBuilder } = require('discord.js');
-// แก้ปัญหา 'client_id' undefined ของ SoundCloud
+const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('@discordjs/voice');
+const playdl = require('play-dl');
+const { EmbedBuilder } = require('discord.js'); // <--- วางบรรทัดที่ 3 ตรงนี้เลยครับ
+
+// แก้ปัญหา 'client_id' undefined ของ SoundCloud// แก้ปัญหา 'client_id' undefined ของ SoundCloud
 playdl.getFreeClientID().then((clientID) => {
     playdl.setToken({ soundcloud: { client_id: clientID } });
 }).catch(err => console.error("Could not set SoundCloud token:", err));
@@ -197,6 +200,21 @@ async function handleCommands(message) {
         }).join('\n');
         
         return message.reply(`📋 **คิวเพลงปัจจุบัน:**\n${queueString}${tracks.length > 10 ? `\n...และอีก ${tracks.length - 10} เพลง` : ''}`);
+    }
+
+    // --- คำสั่ง !menu โชว์รูปภาพ ---
+    if (commandName === 'menu' || commandName === 'help') {
+        const embed = new EmbedBuilder()
+            .setColor('#ffb6c1') // สีชมพู (เปลี่ยนสีได้ตามใจชอบ)
+            .setAuthor({ 
+                name: 'Deay Music Room', 
+                iconURL: message.client.user.displayAvatarURL() // ดึงรูปโปรไฟล์บอทมาใส่ให้อัตโนมัติ
+            })
+            .setDescription('Type name song or url to play music ˚ ⊹')
+            .setImage('ลิงก์รูปภาพแบนเนอร์ของคุณ.png') // <--- เอาลิงก์รูปภาพมาใส่ตรงนี้
+            .setFooter({ text: 'deaybot.work' });
+
+        return message.channel.send({ embeds: [embed] });
     }
 }
 
