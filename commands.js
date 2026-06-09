@@ -2,8 +2,6 @@ const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerSta
 const ytSearch = require('yt-search');
 const scdl = require('soundcloud-downloader').default; 
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags, StringSelectMenuBuilder } = require('discord.js');
-const ffmpegPath = require('ffmpeg-static');
-const { spawn } = require('child_process');
 
 const serverQueues = new Map();
 const serverPanels = new Map(); 
@@ -30,7 +28,7 @@ function getControllerComponents(queue) {
             .setCustomId('select_effect')
             .setPlaceholder(`Active filters: ${currentFilter === 'none' ? 'ไม่มี' : currentFilter}`)
             .addOptions(filterOptions)
-            .setDisabled(false) // เปิดใช้งานแล้ว!
+            .setDisabled(false) 
     );
 
     const row2 = new ActionRowBuilder().addComponents(
@@ -154,10 +152,7 @@ async function playNext(guildId) {
             .replace(/\(Lyric.*?\)/gi, '')
             .trim();
 
-        let searchResults = await scdl.search({
-            query: cleanTitle,
-            resourceType: 'tracks'
-        });
+        let searchResults = await scdl.search({ query: cleanTitle, resourceType: 'tracks' });
 
         if (!searchResults.collection || searchResults.collection.length === 0) {
             const extraCleanTitle = track.title.replace(/\[.*?\]|\(.*?\)/g, '').trim();
@@ -194,35 +189,34 @@ async function playNext(guildId) {
                 '8d': 'apulsator=hz=0.08'
             };
 
-            const ffmpegArgs = [
-                '-analyzeduration', '0',
-                '-loglevel', '0',
-                '-i', 'pipe:0',
-                '-af', filters[queue.filter] || 'anull',
-                '-f', 's16le',
-                '-ar', '48000',
-                '-ac', '2'
-            ];
+            const prism = require('prism-media');
+            const transcoder = new prism.FFmpeg({
+                args: [
+                    '-analyzeduration', '0',
+                    '-loglevel', '0',
+                    '-i', '-',
+                    '-af', filters[queue.filter] || 'anull',
+                    '-f', 's16le',
+                    '-ar', '48000',
+                    '-ac', '2'
+                ]
+            });
 
-            const ffmpegProcess = spawn(ffmpegPath, ffmpegArgs, { stdio: ['pipe', 'pipe', 'ignore'] });
-            
-            stream.pipe(ffmpegProcess.stdin);
-            
-            ffmpegProcess.on('error', (err) => console.error("FFmpeg error:", err));
-            ffmpegProcess.stdin.on('error', () => {}); // Ignore pipe closure errors
+            transcoder.on('error', (err) => {
+                console.error("FFmpeg Transcoder Error:", err);
+            });
 
-            // ดึงเสียงที่ผ่านการปรุงแต่งแล้วมาเล่น
-            resource = createAudioResource(ffmpegProcess.stdout, { 
+            stream.pipe(transcoder);
+
+            resource = createAudioResource(transcoder, { 
                 inputType: StreamType.Raw,
                 inlineVolume: true 
             });
         } else {
-            // เล่นแบบปกติ (ไม่มี Filter)
             resource = createAudioResource(stream, { inlineVolume: true });
         }
 
         resource.volume.setVolume(queue.isMuted ? 0 : queue.volume); 
-        
         queue.resource = resource; 
         queue.player.play(resource);
 
@@ -230,14 +224,9 @@ async function playNext(guildId) {
         console.error(`[Error] เล่นเพลงไม่ได้: ${error.message}`);
         
         try {
-            await track.interaction.followUp({ 
-                content: `❌ ข้ามเพลง **${track.title}** (ดึงไฟล์เสียงไม่สำเร็จ)`, 
-                flags: MessageFlags.Ephemeral 
-            });
+            await track.interaction.followUp({ content: `❌ ข้ามเพลง **${track.title}** (ดึงไฟล์เสียงไม่สำเร็จ)`, flags: MessageFlags.Ephemeral });
         } catch (e) {
-            queue.textChannel.send(`❌ ข้ามเพลง **${track.title}** (ดึงไฟล์เสียงไม่สำเร็จ)`).then(msg => {
-                setTimeout(() => msg.delete().catch(()=>{}), 10000);
-            });
+            queue.textChannel.send(`❌ ข้ามเพลง **${track.title}** (ดึงไฟล์เสียงไม่สำเร็จ)`).then(msg => setTimeout(() => msg.delete().catch(()=>{}), 10000));
         }
 
         queue.tracks.shift();
@@ -333,7 +322,6 @@ async function playLogic(interaction, query, isRandom = false) {
             serverQueues.set(interaction.guild.id, queue);
 
             player.on(AudioPlayerStatus.Idle, () => { 
-                // หากกำลังเปลี่ยน Filter ให้เล่นเพลงเดิมซ้ำไปเลยไม่ต้องเลื่อนคิว
                 if (queue.restartPending) {
                      queue.restartPending = false;
                      playNext(interaction.guild.id);
@@ -417,14 +405,12 @@ async function handleCommands(interaction) {
         const customId = interaction.customId;
         const queue = serverQueues.get(interaction.guild.id);
 
-        // ระบบ Audio Filter (FFmpeg DSP)
         if (customId === 'select_effect') {
              if (!queue) return interaction.reply({ content: '❌ ไม่มีเพลงเล่นอยู่ครับ', flags: MessageFlags.Ephemeral });
              
              const selectedFilter = interaction.values[0];
              queue.filter = selectedFilter;
              
-             // สั่งให้รีสตาร์ทเพลงเพื่อใส่เอฟเฟคทันที
              if (queue.player.state.status === AudioPlayerStatus.Playing || queue.player.state.status === AudioPlayerStatus.Paused) {
                  queue.restartPending = true;
                  queue.player.stop(); 
