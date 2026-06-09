@@ -59,10 +59,9 @@ client.on('ready', async () => {
     }
 });
 
-client.on('interactionCreate', async (interaction) => {
-    if (interaction.isChatInputCommand() || interaction.isButton()) {
-        await handleCommands(interaction);
-    }
+client.on('interactionCreate', async interaction => {
+    if (!interaction.isChatInputCommand() && !interaction.isButton() && !interaction.isStringSelectMenu()) return;
+    handleCommands(interaction);
 });
 
 // ----------------------------------------
