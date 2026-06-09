@@ -22,6 +22,7 @@
     "play-dl": "^1.9.7",
     "youtube-dl-exec": "^3.1.7",
     "youtube-ext": "^1.1.25",
-    "yt-search": "^2.11.1"
+    "yt-search": "^2.11.1",
+    "soundcloud-downloader": "^1.0.0"
   }
 }
