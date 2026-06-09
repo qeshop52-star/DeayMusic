@@ -1,8 +1,6 @@
-process.env.YTDL_NO_UPDATE = '1';
-
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('discord-voip');
-const ytdl = require('@distube/ytdl-core');
 const ytSearch = require('yt-search');
+const scdl = require('soundcloud-downloader').default; // เครื่องยนต์ใหม่ของเรา!
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags, StringSelectMenuBuilder } = require('discord.js');
 
 const serverQueues = new Map();
@@ -119,30 +117,28 @@ async function playNext(guildId) {
     updatePanelState(guildId); 
 
     try {
-        // เตรียมระบบแกะกล่องคุกกี้เพื่อเอาไปยื่นให้ YouTube ดู
-        let parsedCookies = undefined;
-        const cookieString = process.env.YOUTUBE_COOKIE;
-        
-        if (cookieString) {
-            parsedCookies = cookieString.split(';').map(c => {
-                const parts = c.split('=');
-                const name = parts.shift().trim();
-                const value = parts.join('=');
-                return { name, value };
-            }).filter(c => c.name !== '');
+        // ล้างคำพ่วงท้ายในชื่อเพลง เพื่อให้หาใน SoundCloud เจอง่ายขึ้น
+        let cleanTitle = track.title
+            .replace(/\(Official.*?\)/gi, '')
+            .replace(/\[Official.*?\]/gi, '')
+            .replace(/\(Music Video\)/gi, '')
+            .replace(/\(Audio\)/gi, '')
+            .replace(/\(Lyric.*?\)/gi, '')
+            .trim();
+
+        // เอาชื่อเพลงไปค้นหาในฐานข้อมูล SoundCloud แทน
+        const searchResults = await scdl.search({
+            query: cleanTitle,
+            resourceType: 'tracks'
+        });
+
+        if (!searchResults.collection || searchResults.collection.length === 0) {
+            throw new Error('ไม่พบไฟล์เสียงของเพลงนี้ในฐานข้อมูล SoundCloud');
         }
 
-        // สร้าง Agent พร้อมแปะคุกกี้และสับขาหลอก IPv4 ไปด้วยเลย
-        const agent = ytdl.createAgent(parsedCookies, {
-            localAddress: '0.0.0.0' 
-        });
-
-        const stream = ytdl(track.url, { 
-            agent, 
-            filter: 'audioonly', 
-            quality: 'highestaudio',
-            highWaterMark: 1 << 25 
-        });
+        // ดึงลิงก์ไฟล์เสียงตรงๆ จาก SoundCloud มาเล่น
+        const soundcloudTrackUrl = searchResults.collection[0].permalink_url;
+        const stream = await scdl.download(soundcloudTrackUrl);
 
         const resource = createAudioResource(stream);
         queue.player.play(resource);
@@ -193,6 +189,7 @@ async function playLogic(interaction, query, isRandom = false) {
         let trackInfo = null;
         let searchResult = null;
 
+        // ดึงหน้าปกและข้อมูลความสวยงามจาก YouTube เหมือนเดิม (เพราะตรงนี้ไม่โดนบล็อก)
         if (cleanQuery.includes('youtube.com') || cleanQuery.includes('youtu.be')) {
              const videoIdMatch = cleanQuery.match(/(?:v=|\/)([0-9A-Za-z_-]{11}).*/);
              if (videoIdMatch && videoIdMatch[1]) {
