@@ -127,7 +127,8 @@ async function playNext(guildId) {
     queue.playing = true;
     updatePanelState(guildId); 
 
-    try {
+        try {
+        // ล้างคำพ่วงท้ายเบื้องต้น
         let cleanTitle = track.title
             .replace(/\(Official.*?\)/gi, '')
             .replace(/\[Official.*?\]/gi, '')
@@ -136,10 +137,24 @@ async function playNext(guildId) {
             .replace(/\(Lyric.*?\)/gi, '')
             .trim();
 
-        const searchResults = await scdl.search({
+        // ค้นหารอบที่ 1
+        let searchResults = await scdl.search({
             query: cleanTitle,
             resourceType: 'tracks'
         });
+
+        // 🌟 ถ้ารอบแรกหาไม่เจอ (ไม้ตายที่ 1) ให้ตัดคำในวงเล็บ [] หรือ () ออกให้หมดเกลี้ยงแล้วหาใหม่
+        if (!searchResults.collection || searchResults.collection.length === 0) {
+            const extraCleanTitle = track.title.replace(/\[.*?\]|\(.*?\)/g, '').trim();
+            searchResults = await scdl.search({ query: extraCleanTitle, resourceType: 'tracks' });
+        }
+
+        // 🌟 ถ้ายัังหาไม่เจออีก (ไม้ตายที่ 2) ให้ตัดเอาเฉพาะคำหลังเครื่องหมายขีด (-) มาหา
+        if (!searchResults.collection || searchResults.collection.length === 0) {
+            let extraCleanTitle = track.title.replace(/\[.*?\]|\(.*?\)/g, '').trim();
+            const titleOnly = extraCleanTitle.split('-').pop().trim(); 
+            searchResults = await scdl.search({ query: titleOnly, resourceType: 'tracks' });
+        }
 
         if (!searchResults.collection || searchResults.collection.length === 0) {
             throw new Error('ไม่พบไฟล์เสียงของเพลงนี้ในฐานข้อมูล SoundCloud');
@@ -150,8 +165,12 @@ async function playNext(guildId) {
 
         // สร้างระบบเสียงแบบปรับระดับความดังได้ (inlineVolume)
         const resource = createAudioResource(stream, { inlineVolume: true });
-        resource.volume.setVolume(queue.isMuted ? 0 : queue.volume); // ปรับเสียงตามสถานะ
+        resource.volume.setVolume(queue.isMuted ? 0 : queue.volume); 
         
+        queue.resource = resource; 
+        queue.player.play(resource);
+
+    } catch (error) 
         queue.resource = resource; // เก็บค่า resource ไว้ใช้เวลาปรับเสียง
         queue.player.play(resource);
 
