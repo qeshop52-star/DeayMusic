@@ -47,7 +47,7 @@ function getDefaultPanel(client) {
         .setAuthor({ name: `${client.user.username}'s - Music System`, iconURL: client.user.displayAvatarURL() })
         .setTitle('ไม่มีเพลงที่กำลังเล่นอยู่ในขณะนี้')
         .setDescription('ไม่มีเพลงฟังหรอ? ลองสุ่มเพลงดูสิ\n\n**Paste the song link or song name**')
-        .setImage('https://i.imgur.com/vHqBEM3.png') 
+        .setImage('https://static0.cbrimages.com/wordpress/wp-content/uploads/2020/10/cleaning.jpg?q=50&fit=crop&w=825&dpr=1.5') 
         .setFooter({ text: 'Discord Support : discord.gg/xxxxx | Developer : Deay' });
 
     return { embeds: [embed], components: getControllerComponents() };
