@@ -1,3 +1,6 @@
+// ปิดระบบเช็คอัปเดตเพื่อแก้บั๊ก Error 403
+process.env.YTDL_NO_UPDATE = '1';
+
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('discord-voip');
 const ytdl = require('@distube/ytdl-core');
 const ytSearch = require('yt-search');
@@ -117,7 +120,13 @@ async function playNext(guildId) {
     updatePanelState(guildId); 
 
     try {
+        // สร้าง Agent เพื่อหลอก YouTube บังคับให้ใช้เครือข่าย IPv4 ทะลวงบล็อก 429
+        const agent = ytdl.createAgent(undefined, {
+            localAddress: '0.0.0.0' 
+        });
+
         const stream = ytdl(track.url, { 
+            agent, // ใส่หน้ากาก Agent หลบการแบน
             filter: 'audioonly', 
             quality: 'highestaudio',
             highWaterMark: 1 << 25 
@@ -172,7 +181,6 @@ async function playLogic(interaction, query, isRandom = false) {
         let trackInfo = null;
         let searchResult = null;
 
-        // 1. ถ้าเป็นลิงก์ YouTube ให้ดึง Video ID มาค้นหาตรงๆ ผ่าน ytSearch
         if (cleanQuery.includes('youtube.com') || cleanQuery.includes('youtu.be')) {
              const videoIdMatch = cleanQuery.match(/(?:v=|\/)([0-9A-Za-z_-]{11}).*/);
              if (videoIdMatch && videoIdMatch[1]) {
@@ -180,7 +188,6 @@ async function playLogic(interaction, query, isRandom = false) {
              }
         }
         
-        // 2. ถ้าไม่ใช่ลิงก์ (เป็นชื่อเพลง) หรือดึงจาก ID ไม่สำเร็จ ให้ลองค้นหาด้วยข้อความนั้นเลย
         if (!searchResult) {
              const r = await ytSearch(cleanQuery).catch(() => null);
              if (r && r.videos && r.videos.length > 0) {
@@ -188,7 +195,6 @@ async function playLogic(interaction, query, isRandom = false) {
              }
         }
 
-        // 3. เอาข้อมูลที่หามาได้ มาจัดเรียงเพื่อเตรียมเปิดเล่น
         if (searchResult) {
             trackInfo = {
                 title: searchResult.title,
