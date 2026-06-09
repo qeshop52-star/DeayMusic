@@ -109,6 +109,11 @@ async function playNext(guildId) {
     if (queue.tracks.length === 0) {
         queue.playing = false;
         updatePanelState(guildId); 
+        
+        // ตัดการเชื่อมต่อและล้างฐานข้อมูลคิวเมื่อไม่มีเพลง
+        queue.connection.destroy();
+        serverQueues.delete(guildId);
+        
         return;
     }
 
