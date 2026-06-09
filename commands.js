@@ -1,4 +1,3 @@
-// ปิดระบบเช็คอัปเดตเพื่อแก้บั๊ก Error 403
 process.env.YTDL_NO_UPDATE = '1';
 
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('discord-voip');
@@ -120,13 +119,26 @@ async function playNext(guildId) {
     updatePanelState(guildId); 
 
     try {
-        // สร้าง Agent เพื่อหลอก YouTube บังคับให้ใช้เครือข่าย IPv4 ทะลวงบล็อก 429
-        const agent = ytdl.createAgent(undefined, {
+        // เตรียมระบบแกะกล่องคุกกี้เพื่อเอาไปยื่นให้ YouTube ดู
+        let parsedCookies = undefined;
+        const cookieString = process.env.YOUTUBE_COOKIE;
+        
+        if (cookieString) {
+            parsedCookies = cookieString.split(';').map(c => {
+                const parts = c.split('=');
+                const name = parts.shift().trim();
+                const value = parts.join('=');
+                return { name, value };
+            }).filter(c => c.name !== '');
+        }
+
+        // สร้าง Agent พร้อมแปะคุกกี้และสับขาหลอก IPv4 ไปด้วยเลย
+        const agent = ytdl.createAgent(parsedCookies, {
             localAddress: '0.0.0.0' 
         });
 
         const stream = ytdl(track.url, { 
-            agent, // ใส่หน้ากาก Agent หลบการแบน
+            agent, 
             filter: 'audioonly', 
             quality: 'highestaudio',
             highWaterMark: 1 << 25 
