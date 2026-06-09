@@ -1,6 +1,6 @@
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('discord-voip');
-const ytdl = require('@distube/ytdl-core'); // เครื่องยนต์ดึงเสียงใหม่!
-const ytSearch = require('yt-search'); // ระบบค้นหาใหม่!
+const ytdl = require('@distube/ytdl-core');
+const ytSearch = require('yt-search');
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags, StringSelectMenuBuilder } = require('discord.js');
 
 const serverQueues = new Map();
@@ -117,7 +117,6 @@ async function playNext(guildId) {
     updatePanelState(guildId); 
 
     try {
-        // ใช้ ytdl-core ดึงเสียงตรงจาก YouTube! ลื่นปรี๊ดดด!
         const stream = ytdl(track.url, { 
             filter: 'audioonly', 
             quality: 'highestaudio',
@@ -171,38 +170,36 @@ async function playLogic(interaction, query, isRandom = false) {
 
     try {
         let trackInfo = null;
+        let searchResult = null;
 
-        if (cleanQuery.startsWith("http")) {
-            // ถ้าวางลิงก์ ให้เครื่องยนต์ ytdl จัดการดึงข้อมูลคลิป
-            const info = await ytdl.getBasicInfo(cleanQuery).catch(() => null);
-            if (info) {
-                trackInfo = {
-                    title: info.videoDetails.title,
-                    url: info.videoDetails.video_url,
-                    thumbnail: info.videoDetails.thumbnails[0].url,
-                    author: info.videoDetails.author.name,
-                    duration: `${Math.floor(info.videoDetails.lengthSeconds / 60)}:${(info.videoDetails.lengthSeconds % 60).toString().padStart(2, '0')}`,
-                    requester: interaction.user,
-                    interaction: interaction,
-                    isRandom: isRandom
-                };
-            }
-        } else {
-            // ถ้าพิมพ์ชื่อเพลง ให้ ytSearch จัดการค้นหา
-            const r = await ytSearch(cleanQuery).catch(() => null);
-            if (r && r.videos.length > 0) {
-                const searchResult = r.videos[0];
-                trackInfo = {
-                    title: searchResult.title,
-                    url: searchResult.url,
-                    thumbnail: searchResult.thumbnail || searchResult.image,
-                    author: searchResult.author?.name || "Unknown",
-                    duration: searchResult.timestamp || "Unknown",
-                    requester: interaction.user,
-                    interaction: interaction,
-                    isRandom: isRandom 
-                };
-            }
+        // 1. ถ้าเป็นลิงก์ YouTube ให้ดึง Video ID มาค้นหาตรงๆ ผ่าน ytSearch
+        if (cleanQuery.includes('youtube.com') || cleanQuery.includes('youtu.be')) {
+             const videoIdMatch = cleanQuery.match(/(?:v=|\/)([0-9A-Za-z_-]{11}).*/);
+             if (videoIdMatch && videoIdMatch[1]) {
+                 searchResult = await ytSearch({ videoId: videoIdMatch[1] }).catch(() => null);
+             }
+        }
+        
+        // 2. ถ้าไม่ใช่ลิงก์ (เป็นชื่อเพลง) หรือดึงจาก ID ไม่สำเร็จ ให้ลองค้นหาด้วยข้อความนั้นเลย
+        if (!searchResult) {
+             const r = await ytSearch(cleanQuery).catch(() => null);
+             if (r && r.videos && r.videos.length > 0) {
+                  searchResult = r.videos[0];
+             }
+        }
+
+        // 3. เอาข้อมูลที่หามาได้ มาจัดเรียงเพื่อเตรียมเปิดเล่น
+        if (searchResult) {
+            trackInfo = {
+                title: searchResult.title,
+                url: searchResult.url,
+                thumbnail: searchResult.thumbnail || searchResult.image,
+                author: searchResult.author?.name || "Unknown",
+                duration: searchResult.timestamp || searchResult.duration?.timestamp || "Unknown",
+                requester: interaction.user,
+                interaction: interaction,
+                isRandom: isRandom 
+            };
         }
 
         if (!trackInfo) {
