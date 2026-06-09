@@ -1,6 +1,6 @@
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('discord-voip');
 const ytSearch = require('yt-search');
-const scdl = require('soundcloud-downloader').default; // เครื่องยนต์ใหม่ของเรา!
+const scdl = require('soundcloud-downloader').default; 
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags, StringSelectMenuBuilder } = require('discord.js');
 
 const serverQueues = new Map();
@@ -47,13 +47,17 @@ function getDefaultPanel(client) {
         .setAuthor({ name: `${client.user.username}'s - Music System`, iconURL: client.user.displayAvatarURL() })
         .setTitle('ไม่มีเพลงที่กำลังเล่นอยู่ในขณะนี้')
         .setDescription('ไม่มีเพลงฟังหรอ? ลองสุ่มเพลงดูสิ\n\n**Paste the song link or song name**')
-        .setImage('https://static0.cbrimages.com/wordpress/wp-content/uploads/2020/10/cleaning.jpg?q=50&fit=crop&w=825&dpr=1.5') 
+        .setImage('https://i.imgur.com/vHqBEM3.png') 
         .setFooter({ text: 'Discord Support : discord.gg/xxxxx | Developer : Deay' });
 
     return { embeds: [embed], components: getControllerComponents() };
 }
 
 function getNowPlayingPanel(track, client, voiceChannel, queue) {
+    // สถานะสำหรับโชว์ด้านล่าง Footer
+    const loopStates = ['ปิด', 'เพลงเดียว', 'ทั้งคิว'];
+    const volText = queue.isMuted ? 'Mute' : Math.round(queue.volume * 100);
+
     const embed = new EmbedBuilder()
         .setColor('#2b2d31')
         .setAuthor({ name: `${client.user.username}'s - Music System`, iconURL: client.user.displayAvatarURL() })
@@ -68,7 +72,7 @@ function getNowPlayingPanel(track, client, voiceChannel, queue) {
             { name: '✨ เชิญบอท', value: `[Invite](https://discord.com/api/oauth2/authorize?client_id=${client.user.id}&permissions=8&scope=bot%20applications.commands)`, inline: true }
         )
         .setImage(track.thumbnail || 'https://i.imgur.com/vHqBEM3.png')  
-        .setFooter({ text: 'Node: Deay Server [Proxy] • loop: ปิด • volume: 100 • autoplay: ปิด' });
+        .setFooter({ text: `Node: Deay Server [Proxy] • loop: ${loopStates[queue.loopMode]} • volume: ${volText} • autoplay: ปิด` });
 
     if (queue && queue.tracks.length > 1) {
         const upNext = queue.tracks.slice(1, 11); 
@@ -110,10 +114,12 @@ async function playNext(guildId) {
         queue.playing = false;
         updatePanelState(guildId); 
         
-        // ตัดการเชื่อมต่อและล้างฐานข้อมูลคิวเมื่อไม่มีเพลง
-        queue.connection.destroy();
-        serverQueues.delete(guildId);
-        
+        try {
+            queue.connection.destroy();
+            serverQueues.delete(guildId);
+        } catch (e) {
+            console.error(e);
+        }
         return;
     }
 
@@ -122,7 +128,6 @@ async function playNext(guildId) {
     updatePanelState(guildId); 
 
     try {
-        // ล้างคำพ่วงท้ายในชื่อเพลง เพื่อให้หาใน SoundCloud เจอง่ายขึ้น
         let cleanTitle = track.title
             .replace(/\(Official.*?\)/gi, '')
             .replace(/\[Official.*?\]/gi, '')
@@ -131,7 +136,6 @@ async function playNext(guildId) {
             .replace(/\(Lyric.*?\)/gi, '')
             .trim();
 
-        // เอาชื่อเพลงไปค้นหาในฐานข้อมูล SoundCloud แทน
         const searchResults = await scdl.search({
             query: cleanTitle,
             resourceType: 'tracks'
@@ -141,11 +145,14 @@ async function playNext(guildId) {
             throw new Error('ไม่พบไฟล์เสียงของเพลงนี้ในฐานข้อมูล SoundCloud');
         }
 
-        // ดึงลิงก์ไฟล์เสียงตรงๆ จาก SoundCloud มาเล่น
         const soundcloudTrackUrl = searchResults.collection[0].permalink_url;
         const stream = await scdl.download(soundcloudTrackUrl);
 
-        const resource = createAudioResource(stream);
+        // สร้างระบบเสียงแบบปรับระดับความดังได้ (inlineVolume)
+        const resource = createAudioResource(stream, { inlineVolume: true });
+        resource.volume.setVolume(queue.isMuted ? 0 : queue.volume); // ปรับเสียงตามสถานะ
+        
+        queue.resource = resource; // เก็บค่า resource ไว้ใช้เวลาปรับเสียง
         queue.player.play(resource);
 
     } catch (error) {
@@ -194,7 +201,6 @@ async function playLogic(interaction, query, isRandom = false) {
         let trackInfo = null;
         let searchResult = null;
 
-        // ดึงหน้าปกและข้อมูลความสวยงามจาก YouTube เหมือนเดิม (เพราะตรงนี้ไม่โดนบล็อก)
         if (cleanQuery.includes('youtube.com') || cleanQuery.includes('youtu.be')) {
              const videoIdMatch = cleanQuery.match(/(?:v=|\/)([0-9A-Za-z_-]{11}).*/);
              if (videoIdMatch && videoIdMatch[1]) {
@@ -239,10 +245,37 @@ async function playLogic(interaction, query, isRandom = false) {
             const player = createAudioPlayer();
             connection.subscribe(player);
 
-            queue = { textChannel: interaction.channel, voiceChannel: voiceChannel, connection: connection, player: player, tracks: [], playing: false };
+            // เพิ่มตัวแปรสำหรับจดจำสถานะ เสียง, ลูป, Mute ลงในระบบคิว
+            queue = { 
+                textChannel: interaction.channel, 
+                voiceChannel: voiceChannel, 
+                connection: connection, 
+                player: player, 
+                tracks: [], 
+                playing: false,
+                volume: 1.0,         
+                isMuted: false,      
+                loopMode: 0, // 0: ปิด, 1: เพลงเดียว, 2: ทั้งคิว         
+                resource: null 
+            };
             serverQueues.set(interaction.guild.id, queue);
 
-            player.on(AudioPlayerStatus.Idle, () => { queue.tracks.shift(); playNext(interaction.guild.id); });
+            // ระบบจัดการเมื่อเล่นเพลงจบ
+            player.on(AudioPlayerStatus.Idle, () => { 
+                const currentTrack = queue.tracks[0];
+                
+                if (queue.loopMode === 0) { // โหมดปิดลูป -> เอาเพลงปัจจุบันทิ้งไป
+                    queue.tracks.shift(); 
+                } else if (queue.loopMode === 1) { // โหมดวนเพลงเดิม -> ไม่ต้องทิ้งเพลง ปล่อยให้มันเล่นซ้ำ
+                    // ทำอะไรเลย
+                } else if (queue.loopMode === 2) { // โหมดวนทั้งคิว -> เอาเพลงปัจจุบันไปต่อท้ายสุด
+                    queue.tracks.shift();
+                    queue.tracks.push(currentTrack);
+                }
+                
+                playNext(interaction.guild.id); 
+            });
+
             player.on('error', error => { console.error(`[Player Error] ${error.message}`); queue.tracks.shift(); playNext(interaction.guild.id); });
         }
 
@@ -339,7 +372,56 @@ async function handleCommands(interaction) {
              return interaction.reply({ content: '⏹️ หยุดเพลงและล้างคิวเรียบร้อย', flags: MessageFlags.Ephemeral });
         }
 
-        if (['btn_loop', 'btn_shuffle', 'btn_vol_up', 'btn_vol_down', 'btn_mute', 'select_effect'].includes(customId)) {
+        // ระบบวนลูป
+        if (customId === 'btn_loop') {
+             if (!queue) return interaction.reply({ content: '❌ ไม่มีเพลงเล่นอยู่ครับ', flags: MessageFlags.Ephemeral });
+             queue.loopMode = (queue.loopMode + 1) % 3; // สลับโหมด 0 -> 1 -> 2 -> 0
+             const loopNames = ['ปิดลูป', 'วนเพลงเดียว', 'วนทั้งคิว'];
+             updatePanelState(interaction.guild.id);
+             return interaction.reply({ content: `🔁 โหมดลูป: **${loopNames[queue.loopMode]}**`, flags: MessageFlags.Ephemeral });
+        }
+
+        // ระบบสลับคิว
+        if (customId === 'btn_shuffle') {
+             if (!queue || queue.tracks.length <= 1) return interaction.reply({ content: '❌ ไม่มีเพลงในคิวให้สลับครับ', flags: MessageFlags.Ephemeral });
+             const upcoming = queue.tracks.slice(1);
+             for (let i = upcoming.length - 1; i > 0; i--) {
+                 const j = Math.floor(Math.random() * (i + 1));
+                 [upcoming[i], upcoming[j]] = [upcoming[j], upcoming[i]];
+             }
+             queue.tracks = [queue.tracks[0], ...upcoming];
+             updatePanelState(interaction.guild.id);
+             return interaction.reply({ content: '🔀 สลับตำแหน่งเพลงในคิวเรียบร้อย', flags: MessageFlags.Ephemeral });
+        }
+
+        // ระบบเพิ่มเสียง
+        if (customId === 'btn_vol_up') {
+             if (!queue) return interaction.reply({ content: '❌ ไม่มีเพลงเล่นอยู่ครับ', flags: MessageFlags.Ephemeral });
+             queue.volume = Math.min(2.0, queue.volume + 0.1); // สูงสุด 200%
+             if (!queue.isMuted && queue.resource) queue.resource.volume.setVolume(queue.volume);
+             updatePanelState(interaction.guild.id);
+             return interaction.reply({ content: `🔊 เพิ่มเสียงเป็น **${Math.round(queue.volume * 100)}%**`, flags: MessageFlags.Ephemeral });
+        }
+
+        // ระบบลดเสียง
+        if (customId === 'btn_vol_down') {
+             if (!queue) return interaction.reply({ content: '❌ ไม่มีเพลงเล่นอยู่ครับ', flags: MessageFlags.Ephemeral });
+             queue.volume = Math.max(0.1, queue.volume - 0.1); // ต่ำสุด 10%
+             if (!queue.isMuted && queue.resource) queue.resource.volume.setVolume(queue.volume);
+             updatePanelState(interaction.guild.id);
+             return interaction.reply({ content: `🔉 ลดเสียงเหลือ **${Math.round(queue.volume * 100)}%**`, flags: MessageFlags.Ephemeral });
+        }
+
+        // ระบบปิดเสียงชั่วคราว
+        if (customId === 'btn_mute') {
+             if (!queue) return interaction.reply({ content: '❌ ไม่มีเพลงเล่นอยู่ครับ', flags: MessageFlags.Ephemeral });
+             queue.isMuted = !queue.isMuted;
+             if (queue.resource) queue.resource.volume.setVolume(queue.isMuted ? 0 : queue.volume);
+             updatePanelState(interaction.guild.id);
+             return interaction.reply({ content: queue.isMuted ? '🔇 ปิดเสียงชั่วคราว' : `🔊 เปิดเสียงกลับมาที่ **${Math.round(queue.volume * 100)}%**`, flags: MessageFlags.Ephemeral });
+        }
+
+        if (['select_effect'].includes(customId)) {
              return interaction.reply({ content: '🚧 ฟีเจอร์นี้กำลังพัฒนานะครับ อดใจรอการอัปเดตเวอร์ชั่นหน้านะ!', flags: MessageFlags.Ephemeral });
         }
 
@@ -387,15 +469,6 @@ async function handleCommands(interaction) {
     const voiceChannel = interaction.member?.voice?.channel;
     if (!voiceChannel) {
         return interaction.reply({ content: '❌ คุณต้องอยู่ในห้องเสียงก่อนจึงจะสั่งบอทได้ครับ!', flags: MessageFlags.Ephemeral });
-    }
-
-    if (commandName === 'testplay') {
-        const connection = joinVoiceChannel({ channelId: voiceChannel.id, guildId: interaction.guild.id, adapterCreator: interaction.guild.voiceAdapterCreator });
-        const nativePlayer = createAudioPlayer();
-        const resource = createAudioResource('https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3');
-        nativePlayer.play(resource);
-        connection.subscribe(nativePlayer);
-        return interaction.reply({ content: "✅ กำลังทดสอบระบบเสียงพื้นฐาน (Native Test)...", flags: MessageFlags.Ephemeral });
     }
 
     if (commandName === 'stop') {
