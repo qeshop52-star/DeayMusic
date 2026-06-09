@@ -154,101 +154,6 @@ async function playNext(guildId) {
             .replace(/\(Lyric.*?\)/gi, '')
             .trim();
 
-        let searchResults = await scdl.search({ query: cleanTitle, resourceType: 'tracks' });
-
-        if (!searchResults.collection || searchResults.collection.length === 0) {
-            const extraCleanTitle = track.title.replace(/\[.*?\]|\(.*?\)/g, '').trim();
-            searchResults = await scdl.search({ query: extraCleanTitle, resourceType: 'tracks' });
-        }
-
-        if (!searchResults.collection || searchResults.collection.length === 0) {
-            let extraCleanTitle = track.title.replace(/\[.*?\]|\(.*?\)/g, '').trim();
-            const titleOnly = extraCleanTitle.split('-').pop().trim(); 
-            searchResults = await scdl.search({ query: titleOnly, resourceType: 'tracks' });
-        }
-
-        if (!searchResults.collection || searchResults.collection.length === 0) {
-            throw new Error('ไม่พบไฟล์เสียงของเพลงนี้ในฐานข้อมูล SoundCloud');
-        }
-
-        const soundcloudTrackUrl = searchResults.collection[0].permalink_url;
-        const stream = await scdl.download(soundcloudTrackUrl);
-
-        let resource;
-
-        // ระบบประมวลผลเสียง FFmpeg DSP (เมื่อเปิดใช้งาน Filter)
-        if (queue.filter && queue.filter !== 'none') {
-            const filters = {
-                'bassboost': 'bass=g=15,dynaudnorm=f=200',
-                'distort': 'extrastereo=m=2.5,tremolo=f=5.0:d=0.9',
-                'karaoke': 'stereotools=mlev=0.1',
-                'nightcore': 'asetrate=48000*1.25,aresample=48000,atempo=1.25',
-                'slowmo': 'atempo=0.8',
-                'soft': 'compand=attacks=0:points=-80/-80|-15/-15|0/-15|20/-15',
-                'tv': 'highpass=f=200,lowpass=f=3000',
-                'treble_bass': 'treble=g=5,bass=g=5',
-                'vaporwave': 'asetrate=48000*0.8,aresample=48000,atempo=0.8',
-                '8d': 'apulsator=hz=0.08'
-            };
-
-            // แก้ไขลำดับคำสั่งที่ทำให้ FFmpeg พังตรงนี้ครับ
-            const ffmpegArgs = [
-                '-analyzeduration', '0',
-                '-loglevel', '0',
-                '-i', 'pipe:0',
-                '-af', filters[queue.filter] || 'anull',
-                '-f', 's16le',
-                '-ar', '48000',
-                '-ac', '2'
-            ];
-
-            const ffmpegPath = require('ffmpeg-static');
-            const { spawn } = require('child_process');
-            const ffmpegProcess = spawn(ffmpegPath, ffmpegArgs, { stdio: ['pipe', 'pipe', 'ignore'] });
-            
-            stream.pipe(ffmpegProcess.stdin);
-            
-            ffmpegProcess.on('error', (err) => console.error("FFmpeg error:", err));
-            ffmpegProcess.stdin.on('error', () => {}); 
-
-            resource = createAudioResource(ffmpegProcess.stdout, { 
-                inputType: StreamType.Raw,
-                inlineVolume: true 
-            });
-        } else {
-            resource = createAudioResource(stream, { inlineVolume: true });
-        }
-
-        resource.volume.setVolume(queue.isMuted ? 0 : queue.volume); 
-        
-        queue.resource = resource; 
-        queue.player.play(resource);
-
-    } catch (error) {
-        console.error(`[Error] เล่นเพลงไม่ได้: ${error.message}`);
-        try {
-            await track.interaction.followUp({ content: `❌ ข้ามเพลง **${track.title}** (ดึงไฟล์เสียงไม่สำเร็จ)`, flags: MessageFlags.Ephemeral });
-        } catch (e) {
-            queue.textChannel.send(`❌ ข้ามเพลง **${track.title}** (ดึงไฟล์เสียงไม่สำเร็จ)`).then(msg => setTimeout(() => msg.delete().catch(()=>{}), 10000));
-        }
-        queue.tracks.shift();
-        playNext(guildId);
-    }
-
-
-    const track = queue.tracks[0];
-    queue.playing = true;
-    updatePanelState(guildId); 
-
-    try {
-        let cleanTitle = track.title
-            .replace(/\(Official.*?\)/gi, '')
-            .replace(/\[Official.*?\]/gi, '')
-            .replace(/\(Music Video\)/gi, '')
-            .replace(/\(Audio\)/gi, '')
-            .replace(/\(Lyric.*?\)/gi, '')
-            .trim();
-
         let searchResults = await scdl.search({
             query: cleanTitle,
             resourceType: 'tracks'
@@ -290,13 +195,13 @@ async function playNext(guildId) {
             };
 
             const ffmpegArgs = [
-                '-i', 'pipe:0',
                 '-analyzeduration', '0',
                 '-loglevel', '0',
+                '-i', 'pipe:0',
+                '-af', filters[queue.filter] || 'anull',
                 '-f', 's16le',
                 '-ar', '48000',
-                '-ac', '2',
-                '-af', filters[queue.filter] || 'anull'
+                '-ac', '2'
             ];
 
             const ffmpegProcess = spawn(ffmpegPath, ffmpegArgs, { stdio: ['pipe', 'pipe', 'ignore'] });
