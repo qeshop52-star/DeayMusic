@@ -157,7 +157,6 @@ async function playNext(guildId) {
         let searchResults = null;
         let isOfficialNightcore = false;
 
-        // สร้างฟังก์ชันค้นหาแบบกัน Error (ไม่ให้เตะบอทออก)
         const trySearch = async (query) => {
             try {
                 return await scdl.search({ query: query, resourceType: 'tracks' });
@@ -175,7 +174,6 @@ async function playNext(guildId) {
             }
         }
 
-        // ระบบสำรอง 3 ชั้น ถ้าหาแบบแรกไม่เจอ
         if (!searchResults) {
             searchResults = await trySearch(cleanTitle);
         }
@@ -201,6 +199,7 @@ async function playNext(guildId) {
         let resource;
 
         if (queue.filter && queue.filter !== 'none') {
+            // ถอดเบสและแหลมออกก่อนเพื่อทดสอบว่า FFmpeg รองรับฟิลเตอร์พวกนี้ไหม
             const filters = {
                 'bassboost': 'bass=g=15,dynaudnorm=f=200',
                 'distort': 'extrastereo=m=2.5,tremolo=f=5.0:d=0.9',
@@ -216,9 +215,8 @@ async function playNext(guildId) {
 
             let appliedFilter = filters[queue.filter] || 'anull';
 
-            // ถ้าหา Nightcore แท้จากยูทูป/ซาวคลาวด์เจอ ให้ปิดเอฟเฟคบอทไปเลย จะได้ไม่ตีกัน
             if (queue.filter === 'nightcore' && isOfficialNightcore) {
-                appliedFilter = 'anull';
+                appliedFilter = 'anull'; 
             }
 
             const prism = require('prism-media');
@@ -232,10 +230,22 @@ async function playNext(guildId) {
                 ]
             });
 
-            // เพิ่มระบบแจ้งเตือน Error ของ FFmpeg ลงแชท (ถ้าพังอีกจะได้รู้สาเหตุเป๊ะๆ)
+            // 📌 เครื่องจับเท็จ FFmpeg (จะพิมพ์สาเหตุที่พังลงแชท Discord)
+            let ffmpegLogs = '';
+            transcoder.process.stderr.on('data', (data) => {
+                ffmpegLogs += data.toString();
+                if (ffmpegLogs.length > 2000) ffmpegLogs = ffmpegLogs.substring(ffmpegLogs.length - 2000);
+            });
+
+            transcoder.process.on('close', (code) => {
+                if (code !== 0 && queue.filter !== 'none') {
+                    // ถ้าพัง มันจะพิมพ์ Logs ยาวๆ ออกมาในช่องแชท ให้ลูกพี่แคปหน้าจอแชทมาเลยครับ
+                    queue.textChannel.send(`🛑 **FFmpeg Crash (Code ${code}):**\n\`\`\`\n${ffmpegLogs.substring(Math.max(0, ffmpegLogs.length - 1900))}\n\`\`\``).catch(()=>{});
+                }
+            });
+
             transcoder.on('error', (err) => {
-                console.error("FFmpeg Transcoder Error:", err);
-                queue.textChannel.send(`⚠️ ระบบเสียง FFmpeg ขัดข้อง: ${err.message}`).catch(()=>{});
+                queue.textChannel.send(`⚠️ ท่อส่งเสียงพัง: ${err.message}`).catch(()=>{});
             });
 
             stream.pipe(transcoder);
