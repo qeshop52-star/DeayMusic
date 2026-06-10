@@ -59,12 +59,11 @@ function getControllerComponents(queue) {
 
 function getDefaultPanel(client) {
     const embed = new EmbedBuilder()
-        .setColor('#2b2d31')
-        .setAuthor({ name: `${client.user.username}'s - Music System`, iconURL: client.user.displayAvatarURL() })
-        .setTitle('ไม่มีเพลงที่กำลังเล่นอยู่ในขณะนี้')
-        .setDescription('ไม่มีเพลงฟังหรอ? ลองสุ่มเพลงดูสิ\n\n**Paste the song link or song name**')
-        .setImage('https://static0.cbrimages.com/wordpress/wp-content/uploads/2020/10/cleaning.jpg') 
-        .setFooter({ text: 'Discord Support : discord.gg/xxxxx | Developer : Deay' });
+        .setColor('#ffb6c1') // แถบสีชมพูด้านซ้าย
+        .setAuthor({ name: 'Chompu Music Room', iconURL: client.user.displayAvatarURL() })
+        .setDescription('Type name song or url to play music ˚ ⊹')
+        .setImage('https://static0.cbrimages.com/wordpress/wp-content/uploads/2020/10/cleaning.jpg') // 📌 อย่าลืมเอาลิงก์รูปแบนเนอร์น้องชมพูมาใส่ตรงนี้นะครับ
+        .setFooter({ text: 'Deaybot.work' });
 
     return { embeds: [embed], components: getControllerComponents(null) };
 }
