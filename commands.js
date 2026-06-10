@@ -314,7 +314,7 @@ async function playLogic(interaction, query, isRandom = false) {
                 player: player, 
                 tracks: [], 
                 playing: false,
-                volume: 1.0,         
+                volume: 2.0,         
                 isMuted: false,      
                 loopMode: 0, 
                 filter: 'none',
