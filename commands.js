@@ -192,16 +192,16 @@ async function playNext(guildId) {
         let resource;
 
         if (queue.filter && queue.filter !== 'none') {
-            const filters = {
+                        const filters = {
                 'bassboost': 'bass=g=15,dynaudnorm=f=200',
                 'distort': 'extrastereo=m=2.5,tremolo=f=5.0:d=0.9',
                 'karaoke': 'stereotools=mlev=0.1',
-                'nightcore': 'asetrate=48000*1.15,aresample=48000,bass=g=4,treble=g=2',
+                'nightcore': 'asetrate=55200,aresample=48000,bass=g=4,treble=g=2', // แก้เลขตรงนี้
                 'slowmo': 'atempo=0.8',
                 'soft': 'compand=attacks=0:points=-80/-80|-15/-15|0/-15|20/-15',
                 'tv': 'highpass=f=200,lowpass=f=3000',
                 'treble_bass': 'treble=g=5,bass=g=5',
-                'vaporwave': 'asetrate=48000*0.8,aresample=48000',
+                'vaporwave': 'asetrate=38400,aresample=48000', // แก้เลขตรงนี้
                 '8d': 'apulsator=hz=0.08'
             };
 
