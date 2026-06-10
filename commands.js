@@ -154,39 +154,18 @@ async function playNext(guildId) {
             .replace(/\(Lyric.*?\)/gi, '')
             .trim();
 
-        let searchResults = null;
-        let isOfficialNightcore = false;
-
-        const trySearch = async (query) => {
-            try {
-                return await scdl.search({ query: query, resourceType: 'tracks' });
-            } catch (e) {
-                return null;
-            }
-        };
-
-        if (queue.filter === 'nightcore') {
-            searchResults = await trySearch(`${cleanTitle} nightcore`);
-            if (searchResults && searchResults.collection && searchResults.collection.length > 0) {
-                isOfficialNightcore = true;
-            } else {
-                searchResults = null; 
-            }
-        }
-
-        if (!searchResults) {
-            searchResults = await trySearch(cleanTitle);
-        }
+        // ค้นหาเพลงต้นฉบับอย่างเดียว (ป้องกันการเจอไฟล์ Nightcore เถื่อนที่โครงสร้างพัง)
+        let searchResults = await scdl.search({ query: cleanTitle, resourceType: 'tracks' }).catch(() => null);
 
         if (!searchResults || !searchResults.collection || searchResults.collection.length === 0) {
             const extraCleanTitle = track.title.replace(/\[.*?\]|\(.*?\)/g, '').trim();
-            searchResults = await trySearch(extraCleanTitle);
+            searchResults = await scdl.search({ query: extraCleanTitle, resourceType: 'tracks' }).catch(() => null);
         }
 
         if (!searchResults || !searchResults.collection || searchResults.collection.length === 0) {
             let extraCleanTitle = track.title.replace(/\[.*?\]|\(.*?\)/g, '').trim();
             const titleOnly = extraCleanTitle.split('-').pop().trim(); 
-            searchResults = await trySearch(titleOnly);
+            searchResults = await scdl.search({ query: titleOnly, resourceType: 'tracks' }).catch(() => null);
         }
 
         if (!searchResults || !searchResults.collection || searchResults.collection.length === 0) {
@@ -199,12 +178,11 @@ async function playNext(guildId) {
         let resource;
 
         if (queue.filter && queue.filter !== 'none') {
-            // ถอดเบสและแหลมออกก่อนเพื่อทดสอบว่า FFmpeg รองรับฟิลเตอร์พวกนี้ไหม
             const filters = {
                 'bassboost': 'bass=g=15,dynaudnorm=f=200',
                 'distort': 'extrastereo=m=2.5,tremolo=f=5.0:d=0.9',
                 'karaoke': 'stereotools=mlev=0.1',
-                'nightcore': 'asetrate=55200,aresample=48000',
+                'nightcore': 'asetrate=55200,aresample=48000,bass=g=4,treble=g=2',
                 'slowmo': 'atempo=0.8',
                 'soft': 'compand=attacks=0:points=-80/-80|-15/-15|0/-15|20/-15',
                 'tv': 'highpass=f=200,lowpass=f=3000',
@@ -214,10 +192,6 @@ async function playNext(guildId) {
             };
 
             let appliedFilter = filters[queue.filter] || 'anull';
-
-            if (queue.filter === 'nightcore' && isOfficialNightcore) {
-                appliedFilter = 'anull'; 
-            }
 
             const prism = require('prism-media');
             const transcoder = new prism.FFmpeg({
@@ -230,23 +204,15 @@ async function playNext(guildId) {
                 ]
             });
 
-            // 📌 เครื่องจับเท็จ FFmpeg (จะพิมพ์สาเหตุที่พังลงแชท Discord)
-            let ffmpegLogs = '';
-            transcoder.process.stderr.on('data', (data) => {
-                ffmpegLogs += data.toString();
-                if (ffmpegLogs.length > 2000) ffmpegLogs = ffmpegLogs.substring(ffmpegLogs.length - 2000);
-            });
-
+            // ระบบกันชน (Auto-Skip) ถ้าเจอไฟล์เสีย จะข้ามเพลงอัตโนมัติ ไม่เตะบอทออก
             transcoder.process.on('close', (code) => {
                 if (code !== 0 && queue.filter !== 'none') {
-                    // ถ้าพัง มันจะพิมพ์ Logs ยาวๆ ออกมาในช่องแชท ให้ลูกพี่แคปหน้าจอแชทมาเลยครับ
-                    queue.textChannel.send(`🛑 **FFmpeg Crash (Code ${code}):**\n\`\`\`\n${ffmpegLogs.substring(Math.max(0, ffmpegLogs.length - 1900))}\n\`\`\``).catch(()=>{});
+                    queue.textChannel.send(`⚠️ **ข้ามเพลง:** ไฟล์เสียงต้นฉบับเสียหาย ไม่สามารถใส่เอฟเฟคได้`).catch(()=>{});
+                    queue.player.stop(); // บังคับจบเพลงนี้ เพื่อให้บอทเล่นเพลงต่อไป
                 }
             });
 
-            transcoder.on('error', (err) => {
-                queue.textChannel.send(`⚠️ ท่อส่งเสียงพัง: ${err.message}`).catch(()=>{});
-            });
+            transcoder.on('error', () => {}); // ซ่อน Error เล็กๆ น้อยๆ ไม่ให้รก
 
             stream.pipe(transcoder);
 
@@ -275,7 +241,6 @@ async function playNext(guildId) {
         playNext(guildId);
     }
 }
-
 async function playLogic(interaction, query, isRandom = false) {
     const voiceChannel = interaction.member?.voice?.channel;
     if (!voiceChannel) {
