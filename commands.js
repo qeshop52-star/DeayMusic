@@ -154,20 +154,35 @@ async function playNext(guildId) {
             .replace(/\(Lyric.*?\)/gi, '')
             .trim();
 
-        let searchResults = await scdl.search({ query: cleanTitle, resourceType: 'tracks' });
+        let searchResults = null;
+        let isOfficialNightcore = false;
 
-        if (!searchResults.collection || searchResults.collection.length === 0) {
+        // ถ้าระบบเปิด Nightcore อยู่ ให้ลองค้นหาเพลงเวอร์ชั่น Nightcore แท้ๆ ดูก่อน
+        if (queue.filter === 'nightcore') {
+            let ncResults = await scdl.search({ query: `${cleanTitle} nightcore`, resourceType: 'tracks' });
+            if (ncResults.collection && ncResults.collection.length > 0) {
+                searchResults = ncResults;
+                isOfficialNightcore = true; // เจอเวอร์ชั่นแท้แล้ว
+            }
+        }
+
+        // ถ้าหาเวอร์ชั่น Nightcore แท้ไม่เจอ หรือไม่ได้เปิด Nightcore ให้หาเพลงต้นฉบับ
+        if (!searchResults || !searchResults.collection || searchResults.collection.length === 0) {
+            searchResults = await scdl.search({ query: cleanTitle, resourceType: 'tracks' });
+        }
+
+        if (!searchResults || !searchResults.collection || searchResults.collection.length === 0) {
             const extraCleanTitle = track.title.replace(/\[.*?\]|\(.*?\)/g, '').trim();
             searchResults = await scdl.search({ query: extraCleanTitle, resourceType: 'tracks' });
         }
 
-        if (!searchResults.collection || searchResults.collection.length === 0) {
+        if (!searchResults || !searchResults.collection || searchResults.collection.length === 0) {
             let extraCleanTitle = track.title.replace(/\[.*?\]|\(.*?\)/g, '').trim();
             const titleOnly = extraCleanTitle.split('-').pop().trim(); 
             searchResults = await scdl.search({ query: titleOnly, resourceType: 'tracks' });
         }
 
-        if (!searchResults.collection || searchResults.collection.length === 0) {
+        if (!searchResults || !searchResults.collection || searchResults.collection.length === 0) {
             throw new Error('ไม่พบไฟล์เสียงของเพลงนี้ในฐานข้อมูล SoundCloud');
         }
 
@@ -176,21 +191,26 @@ async function playNext(guildId) {
 
         let resource;
 
-        // ระบบประมวลผลเสียง FFmpeg DSP (เมื่อเปิดใช้งาน Filter)
         if (queue.filter && queue.filter !== 'none') {
             const filters = {
                 'bassboost': 'bass=g=15,dynaudnorm=f=200',
                 'distort': 'extrastereo=m=2.5,tremolo=f=5.0:d=0.9',
                 'karaoke': 'stereotools=mlev=0.1',
-                'nightcore': 'asetrate=48000*1.25,aresample=48000,bass=g=4,treble=g=2',
-                'vaporwave': 'asetrate=48000*0.8,aresample=48000',
+                'nightcore': 'asetrate=48000*1.15,aresample=48000,bass=g=4,treble=g=2',
                 'slowmo': 'atempo=0.8',
                 'soft': 'compand=attacks=0:points=-80/-80|-15/-15|0/-15|20/-15',
                 'tv': 'highpass=f=200,lowpass=f=3000',
                 'treble_bass': 'treble=g=5,bass=g=5',
-                'vaporwave': 'asetrate=48000*0.8,aresample=48000,atempo=0.8',
+                'vaporwave': 'asetrate=48000*0.8,aresample=48000',
                 '8d': 'apulsator=hz=0.08'
             };
+
+            let appliedFilter = filters[queue.filter] || 'anull';
+
+            // หากหาเวอร์ชั่น Nightcore แท้เจอแล้ว ไม่ต้องให้ FFmpeg เร่งความเร็วซ้ำ (ให้ใส่แค่เบสกับเสียงแหลมพอ)
+            if (queue.filter === 'nightcore' && isOfficialNightcore) {
+                appliedFilter = 'bass=g=4,treble=g=2';
+            }
 
             const prism = require('prism-media');
             const transcoder = new prism.FFmpeg({
@@ -198,7 +218,7 @@ async function playNext(guildId) {
                     '-analyzeduration', '0',
                     '-loglevel', '0',
                     '-i', '-',
-                    '-af', filters[queue.filter] || 'anull',
+                    '-af', appliedFilter,
                     '-f', 's16le',
                     '-ar', '48000',
                     '-ac', '2'
