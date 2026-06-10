@@ -7,6 +7,9 @@ const serverQueues = new Map();
 const serverPanels = new Map(); 
 
 function getControllerComponents(queue) {
+    // เพิ่มบรรทัดนี้: ถ้าไม่มีคิวเพลง (ยังไม่เล่นเพลง) ให้ซ่อนปุ่มทั้งหมด
+    if (!queue) return [];
+
     const currentFilter = queue?.filter && queue.filter !== 'none' ? queue.filter : 'none';
     
     const filterOptions = [
