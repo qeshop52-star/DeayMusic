@@ -157,29 +157,38 @@ async function playNext(guildId) {
         let searchResults = null;
         let isOfficialNightcore = false;
 
-        // ถ้าระบบเปิด Nightcore อยู่ ให้ลองค้นหาเพลงเวอร์ชั่น Nightcore แท้ๆ ดูก่อน
+        // สร้างฟังก์ชันค้นหาแบบกัน Error (ไม่ให้เตะบอทออก)
+        const trySearch = async (query) => {
+            try {
+                return await scdl.search({ query: query, resourceType: 'tracks' });
+            } catch (e) {
+                return null;
+            }
+        };
+
         if (queue.filter === 'nightcore') {
-            let ncResults = await scdl.search({ query: `${cleanTitle} nightcore`, resourceType: 'tracks' });
-            if (ncResults.collection && ncResults.collection.length > 0) {
-                searchResults = ncResults;
-                isOfficialNightcore = true; // เจอเวอร์ชั่นแท้แล้ว
+            searchResults = await trySearch(`${cleanTitle} nightcore`);
+            if (searchResults && searchResults.collection && searchResults.collection.length > 0) {
+                isOfficialNightcore = true;
+            } else {
+                searchResults = null; 
             }
         }
 
-        // ถ้าหาเวอร์ชั่น Nightcore แท้ไม่เจอ หรือไม่ได้เปิด Nightcore ให้หาเพลงต้นฉบับ
-        if (!searchResults || !searchResults.collection || searchResults.collection.length === 0) {
-            searchResults = await scdl.search({ query: cleanTitle, resourceType: 'tracks' });
+        // ระบบสำรอง 3 ชั้น ถ้าหาแบบแรกไม่เจอ
+        if (!searchResults) {
+            searchResults = await trySearch(cleanTitle);
         }
 
         if (!searchResults || !searchResults.collection || searchResults.collection.length === 0) {
             const extraCleanTitle = track.title.replace(/\[.*?\]|\(.*?\)/g, '').trim();
-            searchResults = await scdl.search({ query: extraCleanTitle, resourceType: 'tracks' });
+            searchResults = await trySearch(extraCleanTitle);
         }
 
         if (!searchResults || !searchResults.collection || searchResults.collection.length === 0) {
             let extraCleanTitle = track.title.replace(/\[.*?\]|\(.*?\)/g, '').trim();
             const titleOnly = extraCleanTitle.split('-').pop().trim(); 
-            searchResults = await scdl.search({ query: titleOnly, resourceType: 'tracks' });
+            searchResults = await trySearch(titleOnly);
         }
 
         if (!searchResults || !searchResults.collection || searchResults.collection.length === 0) {
@@ -196,20 +205,20 @@ async function playNext(guildId) {
                 'bassboost': 'bass=g=15,dynaudnorm=f=200',
                 'distort': 'extrastereo=m=2.5,tremolo=f=5.0:d=0.9',
                 'karaoke': 'stereotools=mlev=0.1',
-                'nightcore': 'asetrate=55200,aresample=48000,bass=g=4,treble=g=2', // แก้เลขตรงนี้
+                'nightcore': 'asetrate=55200,aresample=48000',
                 'slowmo': 'atempo=0.8',
                 'soft': 'compand=attacks=0:points=-80/-80|-15/-15|0/-15|20/-15',
                 'tv': 'highpass=f=200,lowpass=f=3000',
                 'treble_bass': 'treble=g=5,bass=g=5',
-                'vaporwave': 'asetrate=38400,aresample=48000', // แก้เลขตรงนี้
+                'vaporwave': 'asetrate=38400,aresample=48000',
                 '8d': 'apulsator=hz=0.08'
             };
 
             let appliedFilter = filters[queue.filter] || 'anull';
 
-            // หากหาเวอร์ชั่น Nightcore แท้เจอแล้ว ไม่ต้องให้ FFmpeg เร่งความเร็วซ้ำ (ให้ใส่แค่เบสกับเสียงแหลมพอ)
+            // ถ้าหา Nightcore แท้จากยูทูป/ซาวคลาวด์เจอ ให้ปิดเอฟเฟคบอทไปเลย จะได้ไม่ตีกัน
             if (queue.filter === 'nightcore' && isOfficialNightcore) {
-                appliedFilter = 'bass=g=4,treble=g=2';
+                appliedFilter = 'anull';
             }
 
             const prism = require('prism-media');
@@ -225,8 +234,10 @@ async function playNext(guildId) {
                 ]
             });
 
+            // เพิ่มระบบแจ้งเตือน Error ของ FFmpeg ลงแชท (ถ้าพังอีกจะได้รู้สาเหตุเป๊ะๆ)
             transcoder.on('error', (err) => {
                 console.error("FFmpeg Transcoder Error:", err);
+                queue.textChannel.send(`⚠️ ระบบเสียง FFmpeg ขัดข้อง: ${err.message}`).catch(()=>{});
             });
 
             stream.pipe(transcoder);
