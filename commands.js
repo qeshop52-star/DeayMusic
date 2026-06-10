@@ -224,8 +224,6 @@ async function playNext(guildId) {
             const prism = require('prism-media');
             const transcoder = new prism.FFmpeg({
                 args: [
-                    '-analyzeduration', '0',
-                    '-loglevel', '0',
                     '-i', '-',
                     '-af', appliedFilter,
                     '-f', 's16le',
