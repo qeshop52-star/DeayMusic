@@ -192,7 +192,7 @@ async function playNext(guildId) {
         let resource;
 
         if (queue.filter && queue.filter !== 'none') {
-                        const filters = {
+            const filters = {
                 'bassboost': 'bass=g=15,dynaudnorm=f=200',
                 'distort': 'extrastereo=m=2.5,tremolo=f=5.0:d=0.9',
                 'karaoke': 'stereotools=mlev=0.1',
