@@ -60,7 +60,7 @@ function getControllerComponents(queue) {
 function getDefaultPanel(client) {
     const embed = new EmbedBuilder()
         .setColor('#ffb6c1') // แถบสีชมพูด้านซ้าย
-        .setAuthor({ name: 'Chompu Music Room', iconURL: client.user.displayAvatarURL() })
+        .setAuthor({ name: 'Deay Music Room', iconURL: client.user.displayAvatarURL() })
         .setDescription('Type name song or url to play music ˚ ⊹')
         .setImage('https://static0.cbrimages.com/wordpress/wp-content/uploads/2020/10/cleaning.jpg') // 📌 อย่าลืมเอาลิงก์รูปแบนเนอร์น้องชมพูมาใส่ตรงนี้นะครับ
         .setFooter({ text: 'Deaybot.work' });
